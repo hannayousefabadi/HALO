@@ -35,8 +35,10 @@ paper/**/*.blg
 paper/**/.history/
 
 
-# RESULTS (contains mostly large files)
+# RESULTS (contains mostly large files)s
 results/**
+!results/models/.gitkeep
+
 
 
 # HALO package .egg-info

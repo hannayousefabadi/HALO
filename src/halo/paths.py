@@ -30,3 +30,5 @@ MODEL_RESULTS = RESULTS / "models"
 FEATURE_PIPELINE = ROOT / "feature_pipeline"
 FIGURE_PIPELINE = ROOT / "figure_pipeline"
 FIGURES = ROOT / "figures"
+
+ALL_MODELS = ROOT / "scripts" / "models" / "exploratory_models"

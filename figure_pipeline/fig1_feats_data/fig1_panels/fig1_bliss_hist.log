@@ -1,6 +1,6 @@
 Bliss score histogram
 ----------------------
-CSV_PATH: /home/hany/projects/cc_ml/HALO_repo/data/d_processed/combinations_combined.csv
+CSV_PATH: /home/hany/projects/halo/HALO_repo/data/d_processed/halo_training_dataset.csv
 ADDITIVITY_CUTOFF: 0.05
 Number of samples (non-NaN Bliss): 3160
 Bins: 25

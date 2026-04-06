@@ -7,7 +7,7 @@ Post-hoc feature-group importance analysis for exp06b.
 Purpose
 - Load the aggregated LightGBM feature importances produced by exp06b
   (feature_importances_cv1.csv; importance_gain_mean ± std).
-- Classify each reduced elementwise feature as originating from:
+- Classify each elementwise feature as originating from:
     - CC : Chemical Checker base dimensions
     - SS : strain-space (S-space) base dimensions
   using feature_metadata_cc_s_full.csv to infer the CC dimensionality boundary.
@@ -33,9 +33,10 @@ Outputs (written into the exp06b result directory)
 - cc_vs_ss_importance_summary.csv : per-group counts + total normalized gain + fraction of total gain
 - cc_vs_ss_topk_counts.csv        : CC vs SS counts within top k features (k = 20, 50, 100)
 
-**Data integrity note:**
-All preprocessing (NA handling, dtype enforcement, column validation, etc.) was completed upstream.
-This script assumes clean, validated input data and an existing exp06b importance file.
+Data integrity note
+- This script assumes clean, validated input data and an existing exp06b importance file.
+- The exp06b importance file may reflect feature importances aggregated across outer folds
+  after nested training and fold-internal feature selection.
 """
 
 import pandas as pd
@@ -82,7 +83,6 @@ def load_importances(fi_path: Path) -> pd.DataFrame:
     return df
 
 
-
 def load_feature_meta(meta_path: Path) -> tuple[pd.DataFrame, int]:
     """
     Load CC+SS metadata and infer the number of CC dimensions.
@@ -119,7 +119,7 @@ def load_feature_meta(meta_path: Path) -> tuple[pd.DataFrame, int]:
 def feature_group_from_name(feat_name: str, n_cc_dims: int) -> str:
     """
     Map an elementwise feature name like "euc_elem_3141" or "cos_elem_42"
-    to a group: 'CC' or 'SS', using the same logic as make_fig3.py.
+    to a group: 'CC' or 'SS'.
 
     - parse the trailing index: e.g. "euc_elem_3141" -> 3141
     - if idx < n_cc_dims -> CC
@@ -128,7 +128,6 @@ def feature_group_from_name(feat_name: str, n_cc_dims: int) -> str:
     name = feat_name.lower()
 
     if not (name.startswith("cos_elem_") or name.startswith("euc_elem_")):
-        # In exp06b all features should be elementwise; if not, mark as Unknown.
         return "Unknown"
 
     try:
@@ -171,7 +170,6 @@ def summarize_cc_vs_ss(df: pd.DataFrame) -> pd.DataFrame:
     total_gain = grouped["total_gain_norm"].sum()
     grouped["fraction_of_total_gain"] = grouped["total_gain_norm"] / total_gain
 
-    # Sort: most important group first
     grouped = grouped.sort_values("total_gain_norm", ascending=False).reset_index(drop=True)
     return grouped
 
@@ -199,7 +197,7 @@ def summarize_topk_counts(df: pd.DataFrame, ks=(20, 50, 100)) -> pd.DataFrame:
 # ==========================
 
 def main():
-    print("\n=== CC vs SS feature-group importance analysis for exp06b (PHO-CV1) ===\n")
+    print("\n=== CC vs SS feature-group importance analysis for exp06b (HALO-S-CV1) ===\n")
 
     print("Loading feature importances from:", FI_PATH)
     df_imp = load_importances(FI_PATH)
@@ -212,12 +210,10 @@ def main():
     print("\nAssigning group = CC vs SS for each feature...")
     df_imp = add_group_column(df_imp, n_cc_dims)
 
-    # Basic sanity check: all elementwise features should map to CC or SS.
     group_counts = df_imp["group"].value_counts(dropna=False)
     print("\nGroup label counts:")
     print(group_counts)
 
-    # ---- Summary 1: total gain per group ----
     summary = summarize_cc_vs_ss(df_imp)
     print("\nTotal normalized gain per group (CC vs SS):")
     print(summary)
@@ -225,7 +221,6 @@ def main():
     print("\nSaving group summary CSV to:", OUT_SUMMARY_PATH)
     summary.to_csv(OUT_SUMMARY_PATH, index=False)
 
-    # ---- Summary 2: top-k group counts ----
     topk_df = summarize_topk_counts(df_imp, ks=(20, 50, 100))
     print("\nTop-k group counts (how many CC vs SS in top 20 / 50 / 100):")
     print(topk_df)

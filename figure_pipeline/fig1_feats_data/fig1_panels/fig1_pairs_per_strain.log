@@ -1,7 +1,5 @@
 Unique drug pairs per strain
 ----------------------------
-CSV_PATH: /home/hany/projects/cc_ml/HALO_repo/data/d_processed/combinations_combined.csv
-
 strain_pretty	unique_pairs
 Escherichia coli BW25113	481
 Escherichia coli IAI1	481
@@ -13,3 +11,16 @@ Staphylococcus aureus DSM 20231	258
 Staphylococcus aureus Newman	234
 Streptococcus pneumoniae	209
 Bacillus subtilis	161
+
+Pair-strain overlap
+----------------------------
+count_of_strains_with_this_pair	count_of_distinct_drug_pairs	percentage_of_all_pairs
+1	417	30.98%
+2	540	40.12%
+3	75	5.57%
+4	219	16.27%
+5	32	2.38%
+6	48	3.57%
+7	8	0.59%
+8	5	0.37%
+9	2	0.15%

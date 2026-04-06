@@ -4,23 +4,26 @@ Experiment: exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv_bliss005 (HALO
 
 Config
 - task: binary classification (synergy vs antagonism) with Bliss additivity cutoff ±0.05
-- feature_design: reduced elementwise similarity features (selected in exp05d), CC-only
+- feature_design: CC-only elementwise similarity features built inside this script
 - use_sspace: false (no strain-space/S-space features)
 - cv_scheme: CV1 (drug-pair held-out)
 - outer_cv: 5-fold grouped CV by Drug Pair (StratifiedGroupKFold if available, else GroupKFold)
 - inner_cv: 3-fold grouped CV by Drug Pair for hyperparameter search (nested inside each outer fold)
+- feature selection:
+    - performed inside each inner-training fold only during hyperparameter search
+    - rerun on the full outer-training set before final refit
 - model: LightGBM (binary objective), “synergy” treated as the positive class for ROC AUC
 - outputs:
     - per-fold metrics and mean±std summaries (test + train)
     - per-fold and aggregated confusion matrices
-    - per-fold and averaged feature importances (split + gain, with normalized gain)
+    - per-fold and aggregated feature importances
     - per-fold train/test prediction tables
     - best hyperparameters (per-fold + best-overall) saved as JSON
 
-**Data integrity note:**
+Data integrity note:
 All preprocessing (NA handling, dtype enforcement, column validation, etc.)
 was completed in the preprocessing scripts.
-This notebook assumes clean, validated input data.
+This script assumes clean, validated input data and performs feature selection strictly within CV.
 """
 
 import json
@@ -47,45 +50,114 @@ from sklearn.metrics import (
     precision_recall_fscore_support,
 )
 
-from halo.paths import MODEL_RESULTS
+from halo.paths import CC_FEATURES, PROCESSED, MODEL_RESULTS
+from halo.mappers.feature_mapper import FeatureMapper
+from halo.shared_utils.data_io import classify_interaction
+
+
+def select_features_lgbm(
+    X_train: pd.DataFrame,
+    y_train: np.ndarray,
+    feat_cols: list[str],
+    corr_min: float = 0.01,
+    keep_top_frac: float = 0.30,
+) -> list[str]:
+    """
+    Feature selection performed using training data only.
+
+    Steps
+    1) drop zero-variance features
+    2) correlation prefilter using |corr(feature, y)| >= corr_min
+       fallback: keep all variance-filtered features if none pass
+    3) LightGBM importance ranking and keep top fraction
+    """
+    var_series = X_train.var()
+    kept_after_var = [c for c in feat_cols if var_series[c] > 0.0]
+
+    if len(kept_after_var) == 0:
+        raise ValueError("No features remained after variance filtering.")
+
+    kept_after_corr = []
+    y_train_s = pd.Series(y_train, index=X_train.index)
+
+    for col in kept_after_var:
+        corr = X_train[col].corr(y_train_s)
+        if corr is not None and np.isfinite(corr) and abs(corr) >= corr_min:
+            kept_after_corr.append(col)
+
+    if not kept_after_corr:
+        kept_after_corr = kept_after_var.copy()
+
+    fs_model = lgb.LGBMClassifier(
+        objective="binary",
+        n_estimators=2000,
+        random_state=777,
+        n_jobs=1,
+        learning_rate=0.03,
+        max_depth=3,
+        num_leaves=15,
+        min_data_in_leaf=200,
+        feature_fraction=0.4,
+        bagging_fraction=0.8,
+        bagging_freq=1,
+        lambda_l2=50.0,
+        lambda_l1=0.0,
+        max_bin=127,
+        min_gain_to_split=0.05,
+    )
+
+    fs_model.fit(X_train[kept_after_corr], y_train)
+
+    feat_imp = pd.Series(
+        fs_model.feature_importances_,
+        index=kept_after_corr
+    ).sort_values(ascending=False)
+
+    n_keep = max(1, int(len(feat_imp) * keep_top_frac))
+    selected_features = feat_imp.index[:n_keep].tolist()
+    return selected_features
+
 
 def main():
     # ==========================
     # 0) Basic config
     # ==========================
-    SCHEME = "CV1"  # keep same scheme as exp03/exp06b for fair comparison
+    SCHEME = "CV1"
+    corr_min = 0.01
+    keep_top_frac = 0.30
 
-    # path to the reduced CC-only elementwise dataset produced by exp05d
-    filtered_path = MODEL_RESULTS / "exp05d_lgbm_bin_nosspace_elementwise_featselect_bliss005" / "elementwise_features_filtered_cv1_cc_only.csv"
+    cc_path = CC_FEATURES / "cc_features_concat_25x128.csv"
+    combos_path = PROCESSED / "halo_training_dataset.csv"
 
     out_dir = MODEL_RESULTS / "exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv_bliss005"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(
-        "\n=== EXP06d: LGBM bin + reduced CC-only elementwise from exp05d "
+        "\n=== EXP06d: LGBM bin + CC-only elementwise "
         "(CV1, bliss=±0.05) + nested CV, 5-fold outer ===\n"
     )
     print("Using scheme:", SCHEME)
-    print("Input  file:", filtered_path)
     print("Output dir :", out_dir)
 
     # ==========================
-    # 1) Load reduced dataset
+    # 1) Load full CC-only dataset and rebuild elementwise features
     # ==========================
-    if not filtered_path.exists():
-        raise FileNotFoundError(f"Filtered CSV not found at: {filtered_path}")
+    cc_df = pd.read_csv(cc_path).copy()
+    combinations_df = pd.read_csv(combos_path).copy()
 
-    df = pd.read_csv(filtered_path).copy()
-    print("Loaded reduced df shape:", df.shape)
-    print(df["Interaction Type"].value_counts())
+    features_cc = cc_df.copy()
+    df = FeatureMapper().elementwise_similarity(combinations_df, features_cc)
 
-    # safety: keep only synergy vs antagonism (should already be true)
+    df["Interaction Type"] = df["Bliss Score"].apply(
+        lambda x: classify_interaction(x, additivity_cutoff=0.05)
+    )
     df = df[df["Interaction Type"].isin(["synergy", "antagonism"])].copy()
-    print("\nAfter filtering to synergy/antagonism:", df.shape)
+
+    print("Loaded full CC-only df shape:", df.shape)
     print(df["Interaction Type"].value_counts())
 
     # ==========================
-    # 2) Feature columns (reduced elementwise only)
+    # 2) Feature columns
     # ==========================
     drop_cols = [
         "Drug A",
@@ -108,27 +180,22 @@ def main():
     y_enc = le.fit_transform(y)
 
     pairs = df["Drug Pair"].astype(str).values
-    strains = df["Strain"].astype(str).values  # kept only for info / CV2 if needed
+    strains = df["Strain"].astype(str).values
     n = len(df)
 
     rng = np.random.default_rng(42)
 
     print(f"\nTotal samples: {n}")
-    print(f"Reduced feature columns (CC-only): {len(feat_cols)}")
+    print(f"Full feature columns (CC-only): {len(feat_cols)}")
 
-    # inverse mapping from encoded labels to text
     inv_label_map = {
         int(code): cls for cls, code in zip(le.classes_, le.transform(le.classes_))
     }
 
     # ==========================
-    # 3) Outer splits (CV1 / CV2) – 5-fold outer CV for CV1
+    # 3) Outer splits (CV1)
     # ==========================
     def make_splits_cv1(n_splits=5, verbose=True):
-        """
-        5-fold outer CV over Drug Pair groups (CV1).
-        Uses StratifiedGroupKFold if available, falls back to GroupKFold.
-        """
         try:
             outer_cv = StratifiedGroupKFold(
                 n_splits=n_splits, shuffle=True, random_state=42
@@ -160,8 +227,7 @@ def main():
         verbose: bool = True,
     ):
         """
-        Exhaustive strain subset search (CV2: held out by Strain + Drug Pair)
-        (kept here for completeness; not used when SCHEME == 'CV1')
+        Kept for completeness; not used when SCHEME == 'CV1'
         """
         S_all = df[strain_col].astype(str).values
         P_all = df[pair_col].astype(str).values
@@ -214,10 +280,7 @@ def main():
         if not candidates:
             if verbose:
                 print("-" * 72)
-                print(
-                    "No subsets hit the target kept-test band. "
-                    "You can widen [min_frac, max_frac] or allow manual S_test."
-                )
+                print("No subsets hit the target kept-test band.")
                 print("=" * 72)
             return np.arange(n_total), np.array([], dtype=int), {
                 "reason": "no_candidate",
@@ -236,37 +299,13 @@ def main():
             }
 
         candidates.sort(key=lambda c: (c["dropped"], -c["kept"], -c["score"]))
-
-        if verbose:
-            print("-" * 72)
-            print(
-                f"Valid candidates in band: {len(candidates)} | "
-                f"Showing top {min(top_k_print, len(candidates))}"
-            )
-            print(
-                "rank | #S | #P | kept(%) | dropped(%) | score | S_test (truncated)"
-            )
-            for i, c in enumerate(candidates[:top_k_print], 1):
-                kept_pct = 100.0 * c["kept"] / n_total
-                drop_pct = 100.0 * c["dropped"] / n_total
-                s_preview = ", ".join(list(sorted(c["S_test"]))[:3])
-                if len(c["S_test"]) > 3:
-                    s_preview += ", …"
-                print(
-                    f"{i:>4} | {len(c['S_test']):>2} | {len(c['P_test']):>3} | "
-                    f"{kept_pct:6.2f} | {drop_pct:9.2f} | {c['score']:>7.1f} | {s_preview}"
-                )
-
         best = candidates[0]
+
         S_test_best = best["S_test"]
         P_test_best = best["P_test"]
 
-        test_mask = np.isin(S_all, list(S_test_best)) & np.isin(
-            P_all, list(P_test_best)
-        )
-        train_mask = (~np.isin(S_all, list(S_test_best))) & (
-            ~np.isin(P_all, list(P_test_best))
-        )
+        test_mask = np.isin(S_all, list(S_test_best)) & np.isin(P_all, list(P_test_best))
+        train_mask = (~np.isin(S_all, list(S_test_best))) & (~np.isin(P_all, list(P_test_best)))
 
         te_idx = np.where(test_mask)[0]
         tr_idx = np.where(train_mask)[0]
@@ -274,25 +313,6 @@ def main():
 
         S_train_best = set(strains_uni) - set(S_test_best)
         P_train_best = set(np.unique(P_all).tolist()) - set(P_test_best)
-
-        if verbose:
-            print("-" * 72)
-            print("Chosen subset (BEST):")
-            print(f"#Test Strains: {len(S_test_best)} | #Test Pairs: {len(P_test_best)}")
-            print(
-                f"Train rows: {tr_idx.size} ({tr_idx.size/n_total*100:.2f}%)"
-            )
-            print(f"Test  rows: {te_idx.size} ({te_idx.size/n_total*100:.2f}%)")
-            print(
-                f"Dropped rows: {dropped_rows} "
-                f"({dropped_rows/n_total*100:.2f}%)"
-            )
-            print(f"Test + Train set: {len(tr_idx) + len(te_idx)}")
-            print(
-                f"Overlap Strains? {len(S_train_best & S_test_best)} (expect 0)"
-            )
-            print(f"Overlap Pairs?   {len(P_train_best & P_test_best)} (expect 0)")
-            print("=" * 72)
 
         info = dict(
             mode="bruteforce_strains",
@@ -312,7 +332,6 @@ def main():
         )
         return tr_idx, te_idx, info
 
-    # Decide outer splits
     if SCHEME == "CV1":
         outer_splits = make_splits_cv1(n_splits=5, verbose=True)
         info = None
@@ -335,7 +354,6 @@ def main():
 
     lgb.register_logger(SilentLogger())
 
-    # containers
     fold_results = []
     cm_total = None
     all_test_dfs = []
@@ -355,12 +373,11 @@ def main():
             learning_rate=float(rng.choice([0.02, 0.03])),
             max_depth=max_depth,
             num_leaves=int(rng.choice(leaves_map[max_depth])),
-            # moderate regularization (NOT heavy)
             min_data_in_leaf=int(rng.choice([200, 300])),
             feature_fraction=float(rng.choice([0.30, 0.40, 0.50])),
             bagging_fraction=float(rng.choice([0.60, 0.70, 0.80])),
             bagging_freq=1,
-            lambda_l2=float(10 ** rng.uniform(1.4, 1.9)),   # ~25–80
+            lambda_l2=float(10 ** rng.uniform(1.4, 1.9)),
             lambda_l1=float(rng.choice([0.0, 0.1, 0.5])),
             max_bin=int(rng.choice([63, 127])),
             min_gain_to_split=float(rng.choice([0.05, 0.10, 0.20])),
@@ -380,7 +397,6 @@ def main():
         df_tr = df.iloc[tr_idx].reset_index(drop=True)
         df_te = df.iloc[te_idx].reset_index(drop=True)
 
-        # ---- Inner CV (nested) ----
         param_samples = [sample_one_params() for _ in range(32)]
 
         try:
@@ -400,8 +416,21 @@ def main():
         def cv_acc_for_params(params):
             accs = []
             for tr_f, val_f in inner_splitter():
-                Xf_tr, Xf_val = X_tr.iloc[tr_f], X_tr.iloc[val_f]
-                yf_tr, yf_val = y_tr[tr_f], y_tr[val_f]
+                Xf_tr = X_tr.iloc[tr_f].reset_index(drop=True)
+                Xf_val = X_tr.iloc[val_f].reset_index(drop=True)
+                yf_tr = y_tr[tr_f]
+                yf_val = y_tr[val_f]
+
+                selected_inner = select_features_lgbm(
+                    X_train=Xf_tr,
+                    y_train=yf_tr,
+                    feat_cols=feat_cols,
+                    corr_min=corr_min,
+                    keep_top_frac=keep_top_frac,
+                )
+
+                Xf_tr_sel = Xf_tr[selected_inner]
+                Xf_val_sel = Xf_val[selected_inner]
 
                 m = lgb.LGBMClassifier(
                     objective="binary",
@@ -411,17 +440,17 @@ def main():
                     **params,
                 )
                 m.fit(
-                    Xf_tr,
+                    Xf_tr_sel,
                     yf_tr,
-                    eval_set=[(Xf_val, yf_val)],
+                    eval_set=[(Xf_val_sel, yf_val)],
                     eval_metric="binary_logloss",
                     callbacks=[
-                        lgb.early_stopping(200, False),  # was 200
+                        lgb.early_stopping(200, False),
                         lgb.log_evaluation(0),
                     ],
                 )
 
-                y_pred_fold = m.predict(Xf_val)
+                y_pred_fold = m.predict(Xf_val_sel)
                 accs.append(accuracy_score(yf_val, y_pred_fold))
             return float(np.mean(accs))
 
@@ -446,8 +475,19 @@ def main():
         )
 
         # ==========================
-        # 5) Final refit on outer-train (this fold)
+        # 5) Final refit on outer-train with outer-train-only feature selection
         # ==========================
+        selected_outer = select_features_lgbm(
+            X_train=X_tr,
+            y_train=y_tr,
+            feat_cols=feat_cols,
+            corr_min=corr_min,
+            keep_top_frac=keep_top_frac,
+        )
+
+        X_tr_sel = X_tr[selected_outer]
+        X_te_sel = X_te[selected_outer]
+
         m_final = lgb.LGBMClassifier(
             objective="binary",
             n_estimators=4000,
@@ -455,7 +495,7 @@ def main():
             n_jobs=4,
             **best_params,
         )
-        m_final.fit(X_tr, y_tr)
+        m_final.fit(X_tr_sel, y_tr)
 
         pos_idx = np.flatnonzero(m_final.classes_ == synergy_code)[0]
 
@@ -468,34 +508,35 @@ def main():
 
         feat_importance_df = pd.DataFrame(
             {
-                "feature": feat_cols,
+                "feature": selected_outer,
                 "importance_split": imp_split,
                 "importance_gain": imp_gain,
             }
         )
-        feat_importance_df["importance_gain_norm"] = (
-            feat_importance_df["importance_gain"]
-            / feat_importance_df["importance_gain"].sum()
-        )
+
+        total_gain_fold = feat_importance_df["importance_gain"].sum()
+        if total_gain_fold > 0:
+            feat_importance_df["importance_gain_norm"] = (
+                feat_importance_df["importance_gain"] / total_gain_fold
+            )
+        else:
+            feat_importance_df["importance_gain_norm"] = 0.0
 
         fi_fold_path = out_dir / f"feature_importances_{SCHEME.lower()}_fold{fold_idx}.csv"
         feat_importance_df.to_csv(fi_fold_path, index=False)
         print("Saved per-fold feature importances to:", fi_fold_path)
 
-        # keep for later averaging
         feat_importance_df["fold"] = fold_idx
         per_fold_importances.append(feat_importance_df)
 
         # ==========================
-        # 6) Final evaluation on held-out test (this fold)
+        # 6) Final evaluation on held-out test
         # ==========================
-        p_te = m_final.predict_proba(X_te)[:, pos_idx]
+        p_te = m_final.predict_proba(X_te_sel)[:, pos_idx]
         y_pred = (p_te >= 0.5).astype(int)
 
-        # make sure "synergy" is the positive class for AUC
         y_te_bin = (y_te == synergy_code).astype(int)
 
-        # Global metrics (this fold)
         accuracy_test = accuracy_score(y_te, y_pred)
         f1_macro_test = f1_score(y_te, y_pred, average="macro")
         f1_weighted_test = f1_score(y_te, y_pred, average="weighted")
@@ -511,12 +552,10 @@ def main():
             classification_report(y_te, y_pred, target_names=le.classes_),
         )
 
-        # Per-class metrics
-        syn_code = synergy_code
         prec, rec, f1s, _ = precision_recall_fscore_support(
             y_te,
             y_pred,
-            labels=[ant_code, syn_code],
+            labels=[ant_code, synergy_code],
         )
         precision_antag, precision_syn = prec
         recall_antag, recall_syn = rec
@@ -535,9 +574,9 @@ def main():
         print(f"f1_syn={f1_syn:.4f}")
 
         # ==========================
-        # 7) Overfitting check (this fold)
+        # 7) Overfitting check
         # ==========================
-        p_tr = m_final.predict_proba(X_tr)[:, pos_idx]
+        p_tr = m_final.predict_proba(X_tr_sel)[:, pos_idx]
         y_tr_pred = (p_tr >= 0.5).astype(int)
         y_tr_bin = (y_tr == synergy_code).astype(int)
 
@@ -567,9 +606,8 @@ def main():
         )
 
         # ==========================
-        # 7b) SAVE train/test-level info for this fold
+        # 7b) Save train/test-level info for this fold
         # ==========================
-        # test predictions for this fold
         test_out_fold = pd.DataFrame(
             {
                 "fold": fold_idx,
@@ -585,7 +623,6 @@ def main():
         )
         all_test_dfs.append(test_out_fold)
 
-        # train predictions for this fold
         train_out_fold = pd.DataFrame(
             {
                 "fold": fold_idx,
@@ -601,7 +638,6 @@ def main():
         )
         all_train_dfs.append(train_out_fold)
 
-        # ---- Confusion matrix for this fold (for inspection) ----
         order = ["antagonism", "synergy"]
         order_idx = le.transform(order)
         cm = confusion_matrix(y_te, y_pred, labels=order_idx)
@@ -628,7 +664,6 @@ def main():
         plt.close(fig)
         print("\nSaved per-fold confusion matrix plot to:", fig_path)
 
-        # store fold metrics (for per-fold panel + summary)
         fold_results.append(
             dict(
                 fold=fold_idx,
@@ -654,10 +689,7 @@ def main():
     # ==========================
     # 8) Aggregate across folds
     # ==========================
-
-    # 8a) Best params JSON (keep same filename, richer content)
     best_params_path = out_dir / f"best_params_{SCHEME.lower()}.json"
-    # choose overall "best" fold for top-level best_params
     best_overall = max(per_fold_best, key=lambda d: d["best_acc_inner_cv"])
     with open(best_params_path, "w") as f:
         json.dump(
@@ -673,23 +705,33 @@ def main():
         )
     print("Saved best params (incl. per-fold) to:", best_params_path)
 
-    # 8b) Feature importances averaged over folds
     if per_fold_importances:
         fi_all = pd.concat(per_fold_importances, ignore_index=True)
-        agg_cols = {}
-        for col in fi_all.columns:
-            if col in ["feature", "fold"]:
-                continue
-            if pd.api.types.is_numeric_dtype(fi_all[col]):
-                agg_cols[col] = "mean"
+
+        all_selected_features = sorted(fi_all["feature"].unique().tolist())
+        rows = []
+        for feat in all_selected_features:
+            sub = fi_all[fi_all["feature"] == feat]
+            vals_split = sub["importance_split"].values
+            vals_gain = sub["importance_gain"].values
+            vals_gain_norm = sub["importance_gain_norm"].values
+
+            rows.append(
+                {
+                    "feature": feat,
+                    "importance_split": float(np.mean(vals_split)),
+                    "importance_gain": float(np.mean(vals_gain)),
+                    "importance_gain_norm": float(np.mean(vals_gain_norm)),
+                    "selected_in_n_folds": int(sub["fold"].nunique()),
+                }
+            )
 
         fi_mean = (
-            fi_all.groupby("feature", as_index=False)
-            .agg(agg_cols)
+            pd.DataFrame(rows)
             .sort_values("importance_gain", ascending=False)
             .reset_index(drop=True)
         )
-        # recompute normalized gain
+
         total_gain = fi_mean["importance_gain"].sum()
         if total_gain > 0:
             fi_mean["importance_gain_norm"] = fi_mean["importance_gain"] / total_gain
@@ -698,7 +740,6 @@ def main():
         fi_mean.to_csv(fi_path, index=False)
         print("Saved averaged feature importances to:", fi_path)
 
-    # 8c) Concatenate test/train predictions across folds
     test_out_all = pd.concat(all_test_dfs, ignore_index=True)
     train_out_all = pd.concat(all_train_dfs, ignore_index=True)
 
@@ -711,13 +752,11 @@ def main():
     print("Saved aggregated test predictions to:", test_out_path)
     print("Saved aggregated train predictions to:", train_out_path)
 
-    # 8d) Per-fold metrics CSV (for your panel)
     metrics_per_fold_df = pd.DataFrame(fold_results)
     metrics_per_fold_path = out_dir / f"metrics_per_fold_{SCHEME.lower()}.csv"
     metrics_per_fold_df.to_csv(metrics_per_fold_path, index=False)
     print("Saved per-fold metrics to:", metrics_per_fold_path)
 
-    # 8e) Aggregated metrics (Option A: mean ± std over folds)
     def mean_std(key):
         vals = [fr[key] for fr in fold_results]
         return float(np.mean(vals)), float(np.std(vals))
@@ -735,14 +774,13 @@ def main():
     print(f"f1_macro_test_mean={f1m_mean:.4f}  f1_macro_test_std={f1m_std:.4f}")
     print("=" * 72)
 
-    # Per-class metrics (mean ± std over folds)
     prec_a_mean, prec_a_std = mean_std("precision_antag")
-    rec_a_mean,  rec_a_std  = mean_std("recall_antag")
-    f1_a_mean,   f1_a_std   = mean_std("f1_antag")
+    rec_a_mean, rec_a_std = mean_std("recall_antag")
+    f1_a_mean, f1_a_std = mean_std("f1_antag")
 
     prec_s_mean, prec_s_std = mean_std("precision_syn")
-    rec_s_mean,  rec_s_std  = mean_std("recall_syn")
-    f1_s_mean,   f1_s_std   = mean_std("f1_syn")
+    rec_s_mean, rec_s_std = mean_std("recall_syn")
+    f1_s_mean, f1_s_std = mean_std("f1_syn")
 
     print("Per-class metrics over outer folds:")
     print(
@@ -759,8 +797,6 @@ def main():
     )
     print("=" * 72)
 
-
-    # Save aggregated test metrics (keep filename, add *_std + n_folds)
     metrics_test = {
         "scheme": SCHEME,
         "n_folds": len(fold_results),
@@ -779,7 +815,6 @@ def main():
     metrics_test_df.to_csv(metrics_test_path, index=False)
     print("Saved aggregated test metrics to:", metrics_test_path)
 
-    # Similarly aggregate train metrics
     auc_tr_mean, auc_tr_std = mean_std("roc_auc_train")
     acc_tr_mean, acc_tr_std = mean_std("accuracy_train")
     f1w_tr_mean, f1w_tr_std = mean_std("f1_weighted_train")
@@ -803,9 +838,7 @@ def main():
     metrics_train_df.to_csv(metrics_train_path, index=False)
     print("Saved aggregated train metrics to:", metrics_train_path)
 
-    # 8f) Aggregated confusion matrix → SAVE
     order = ["antagonism", "synergy"]
-    order_idx = le.transform(order)
     cm_all = cm_total if cm_total is not None else np.zeros((2, 2), dtype=int)
 
     fig, ax = plt.subplots(figsize=(6, 5))
@@ -822,7 +855,6 @@ def main():
     ax.set_ylabel("True Label", fontsize=11)
 
     plt.tight_layout()
-    # keep original filename for “final” confusion matrix
     fig_path = out_dir / f"confusion_matrix_{SCHEME.lower()}.png"
     fig.savefig(fig_path, dpi=150)
     plt.close(fig)
