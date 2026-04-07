@@ -1,62 +1,132 @@
 #!/usr/bin/env python3
 """
-Experiment: exp06_novel_pairs 
+Experiment: exp06_novel_pairs
 
 - Trains the final HALO-CV1 model (exp06d config) on the full labeled dataset.
+- Performs feature selection once on the full labeled training set only.
 - Generates novel drug-pair predictions by:
     * taking all possible pairs among the unique compounds (by Inchikey),
     * excluding pairs that appear in the labeled training set,
-    * scoring the remaining "novel" pairs with the final model.
-- Prints and saves:
-    * top 40 novel pairs ranked by P(synergy)
-    * top 40 novel pairs ranked by P(antagonism)
+    * scoring the remaining novel pairs with the final model.
+
+Prints and saves:
+- top 40 novel pairs ranked by P(synergy)
+- top 40 novel pairs ranked by P(antagonism)
 """
+
 import json
 from pathlib import Path
+import itertools
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
 from joblib import dump
 from sklearn.preprocessing import LabelEncoder
 
-from pathlib import Path
-from halo.paths import MODEL_RESULTS, CC_FEATURES
+from halo.paths import MODEL_RESULTS, CC_FEATURES, PROCESSED
 from halo.mappers.feature_mapper import FeatureMapper
+from halo.shared_utils.data_io import classify_interaction
 
-FILTERED_PATH = MODEL_RESULTS / "exp05d_lgbm_bin_nosspace_elementwise_featselect_bliss005" / "elementwise_features_filtered_cv1_cc_only.csv"
-ALLPAIRS_PATH = MODEL_RESULTS / "exp05d_lgbm_bin_nosspace_elementwise_featselect_bliss005" / "elementwise_features_filtered_all_possible_pairs_cv1_cc_only.csv"
 
 BEST_PARAMS_PATH = MODEL_RESULTS / "exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv_bliss005" / "best_params_cv1.json"
 CC_FEATURES_PATH = CC_FEATURES / "cc_features_concat_25x128.csv"
+COMBOS_PATH = PROCESSED / "halo_training_dataset.csv"
 
 OUT_DIR = MODEL_RESULTS / "e_validation" / "novel_pairs"
 
-# ==========================
-# 1) Load and prep training data
-# ==========================
 
 def _make_pair_id(ik_a, ik_b):
-    """Order-invariant pair ID from two Inchikeys."""
     if pd.isna(ik_a) or pd.isna(ik_b):
         return np.nan
     a, b = str(ik_a), str(ik_b)
     return "||".join(sorted([a, b]))
 
 
-def load_training_data(filtered_path: Path):
-    if not filtered_path.exists():
-        raise FileNotFoundError(f"Labeled reduced CSV not found at: {filtered_path}")
+def select_features_lgbm(
+    X_train: pd.DataFrame,
+    y_train: np.ndarray,
+    feat_cols: list[str],
+    corr_min: float = 0.01,
+    keep_top_frac: float = 0.30,
+) -> list[str]:
+    var_series = X_train.var()
+    kept_after_var = [c for c in feat_cols if var_series[c] > 0.0]
 
-    df = pd.read_csv(filtered_path).copy()
-    print("Loaded labeled reduced df shape:", df.shape)
-    print(df["Interaction Type"].value_counts())
+    if len(kept_after_var) == 0:
+        raise ValueError("No features remained after variance filtering.")
 
-    # Keep only synergy vs antagonism
+    kept_after_corr = []
+    y_train_s = pd.Series(y_train, index=X_train.index)
+
+    for col in kept_after_var:
+        corr = X_train[col].corr(y_train_s)
+        if corr is not None and np.isfinite(corr) and abs(corr) >= corr_min:
+            kept_after_corr.append(col)
+
+    if not kept_after_corr:
+        kept_after_corr = kept_after_var.copy()
+
+    fs_model = lgb.LGBMClassifier(
+        objective="binary",
+        n_estimators=2000,
+        random_state=777,
+        n_jobs=1,
+        learning_rate=0.03,
+        max_depth=3,
+        num_leaves=15,
+        min_data_in_leaf=200,
+        feature_fraction=0.4,
+        bagging_fraction=0.8,
+        bagging_freq=1,
+        lambda_l2=50.0,
+        lambda_l1=0.0,
+        max_bin=127,
+        min_gain_to_split=0.05,
+    )
+
+    fs_model.fit(X_train[kept_after_corr], y_train)
+
+    feat_imp = pd.Series(
+        fs_model.feature_importances_,
+        index=kept_after_corr,
+    ).sort_values(ascending=False)
+
+    n_keep = max(1, int(len(feat_imp) * 0.30))
+    return feat_imp.index[:n_keep].tolist()
+
+
+def load_cc_features(cc_features_path: Path) -> pd.DataFrame:
+    if not cc_features_path.exists():
+        raise FileNotFoundError(f"CC features file not found at: {cc_features_path}")
+
+    df_cc = pd.read_csv(cc_features_path).copy()
+
+    if "inchikey" not in df_cc.columns:
+        raise KeyError("CC features file must contain an 'inchikey' column.")
+
+    return df_cc
+
+
+def load_training_data_from_raw(combos_path: Path, cc_features_path: Path):
+    if not combos_path.exists():
+        raise FileNotFoundError(f"Training dataset not found at: {combos_path}")
+
+    cc_df = load_cc_features(cc_features_path)
+    combos_df = pd.read_csv(combos_path).copy()
+
+    fmap = FeatureMapper()
+    df = fmap.elementwise_similarity(combos_df, cc_df)
+
+    print("Loaded labeled full df shape:", df.shape)
+
+    df["Interaction Type"] = df["Bliss Score"].apply(
+        lambda x: classify_interaction(x, additivity_cutoff=0.05)
+    )
     df = df[df["Interaction Type"].isin(["synergy", "antagonism"])].copy()
+
     print("\nAfter filtering to synergy/antagonism:", df.shape)
     print(df["Interaction Type"].value_counts())
 
-    # Build Pair_ID from Inchikeys (order-invariant)
     df["Pair_ID"] = df.apply(
         lambda r: _make_pair_id(r["Drug A Inchikey"], r["Drug B Inchikey"]),
         axis=1,
@@ -84,28 +154,10 @@ def load_training_data(filtered_path: Path):
     y_enc = le.fit_transform(y)
 
     print(f"\nTotal labeled samples: {len(df)}")
-    print(f"Number of reduced feature columns: {len(feat_cols)}")
+    print(f"Number of full feature columns: {len(feat_cols)}")
 
-    return df, X, y_enc, le, feat_cols
+    return df, X, y_enc, le, feat_cols, cc_df
 
-def load_cc_features(cc_features_path: Path) -> pd.DataFrame:
-    if not cc_features_path.exists():
-        raise FileNotFoundError(f"CC features file not found at: {cc_features_path}")
-
-    df_cc = pd.read_csv(cc_features_path).copy()
-
-    # Basic sanity check for what FeatureMapper expects
-    if "inchikey" not in df_cc.columns:
-        raise KeyError(
-            "CC features file must contain an 'inchikey' column "
-            "(one row per compound)."
-        )
-
-    return df_cc
-
-# ==========================
-# 2) Train final model on full data + save artifacts
-# ==========================
 
 def train_final_model(X, y_enc, le, feat_cols, best_params_path: Path):
     if not best_params_path.exists():
@@ -115,16 +167,22 @@ def train_final_model(X, y_enc, le, feat_cols, best_params_path: Path):
         cfg = json.load(f)
 
     if "best_params" not in cfg:
-        raise KeyError(
-            f"'best_params' key not found in {best_params_path}. "
-            "Make sure this is the JSON written by exp06d."
-        )
+        raise KeyError(f"'best_params' key not found in {best_params_path}.")
 
     best_params = cfg["best_params"]
     print("\nLoaded best params from nested CV:")
     print(json.dumps(best_params, indent=2))
 
-    # Final model: same LightGBM config as exp06d, but trained on ALL data
+    selected_features = select_features_lgbm(
+        X_train=X,
+        y_train=y_enc,
+        feat_cols=feat_cols,
+        corr_min=0.01,
+        keep_top_frac=0.30,
+    )
+    X_sel = X[selected_features].copy()
+    print(f"Selected features for final model: {len(selected_features)}")
+
     m_final = lgb.LGBMClassifier(
         objective="binary",
         n_estimators=4000,
@@ -132,100 +190,87 @@ def train_final_model(X, y_enc, le, feat_cols, best_params_path: Path):
         n_jobs=4,
         **best_params,
     )
-    m_final.fit(X, y_enc)
+    m_final.fit(X_sel, y_enc)
     print("\nTrained final HALO-CV1 model on full labeled dataset.")
 
-    # Determine which class index corresponds to "synergy"
     synergy_code = le.transform(["synergy"])[0]
     pos_idx = np.flatnonzero(m_final.classes_ == synergy_code)[0]
     print("Synergy class index in predict_proba:", pos_idx)
 
-    return m_final, pos_idx
+    return m_final, pos_idx, selected_features
 
 
 def save_artifacts(model, le, feat_cols, out_dir: Path):
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Save LightGBM Booster as text model
     booster = model.booster_
     booster_path = out_dir / "model_final_halo_cv1.txt"
     booster.save_model(str(booster_path))
     print("Saved LightGBM booster to:", booster_path)
 
-    # Save sklearn-wrapper model as joblib
     model_path = out_dir / "model_final_halo_cv1.joblib"
     dump(model, model_path)
     print("Saved sklearn model to:", model_path)
 
-    # Save label encoder
     le_path = out_dir / "label_encoder_halo_cv1.joblib"
     dump(le, le_path)
     print("Saved label encoder to:", le_path)
 
-    # Save feature column list
     feat_path = out_dir / "feat_cols_cv1.json"
     with open(feat_path, "w") as f:
         json.dump(feat_cols, f, indent=2)
     print("Saved feature list to:", feat_path)
 
 
-# ==========================
-# 3) Load all-pairs features & isolate novel pairs
-# ==========================
-
-def load_allpairs_features(allpairs_path: Path):
-    if not allpairs_path.exists():
-        raise FileNotFoundError(f"All-pairs reduced CSV not found at: {allpairs_path}")
-
-    df_all = pd.read_csv(allpairs_path).copy()
-    print("\nLoaded all-pairs feature df shape:", df_all.shape)
-
-    required_cols = {
-        "Drug A", "Drug B",
-        "Drug A Inchikey", "Drug B Inchikey",
-        "Drug Pair"
-    }
-    missing = required_cols - set(df_all.columns)
+def build_all_possible_pairs(cc_df: pd.DataFrame) -> pd.DataFrame:
+    required = {"drug", "inchikey"}
+    missing = required - set(cc_df.columns)
     if missing:
-        raise KeyError(
-            f"All-pairs feature file is missing required columns: {missing}.\n"
-            "It must contain 'Drug A', 'Drug B', 'Drug A Inchikey', "
-            "'Drug B Inchikey', 'Drug Pair' and the same reduced "
-            "feature columns as the labeled file."
+        raise KeyError(f"CC features file is missing required columns for pair generation: {missing}")
+
+    compounds = (
+        cc_df[["drug", "inchikey"]]
+        .dropna()
+        .drop_duplicates()
+        .reset_index(drop=True)
+        .copy()
+    )
+
+    rows = []
+    for (_, a), (_, b) in itertools.combinations(compounds.iterrows(), 2):
+        ik_a = str(a["inchikey"]).strip().upper()
+        ik_b = str(b["inchikey"]).strip().upper()
+        rows.append(
+            {
+                "Drug A": a["drug"],
+                "Drug B": b["drug"],
+                "Drug A Inchikey": ik_a,
+                "Drug B Inchikey": ik_b,
+                "Drug Pair": "::".join(sorted([ik_a, ik_b])),
+                "Pair_ID": _make_pair_id(ik_a, ik_b),
+            }
         )
 
-    # Ensure Pair_ID exists (if not already written by exp05d)
-    if "Pair_ID" not in df_all.columns:
-        df_all["Pair_ID"] = df_all.apply(
-            lambda r: _make_pair_id(r["Drug A Inchikey"], r["Drug B Inchikey"]),
-            axis=1,
-        )
-
-    return df_all
+    df_allpairs = pd.DataFrame(rows)
+    print("\nBuilt all possible pairs shape:", df_allpairs.shape)
+    return df_allpairs
 
 
 def get_novel_pairs(df_train, df_allpairs):
-    # Pairs that appear in the labeled training df (by Inchikey identity)
     train_pairs = set(df_train["Pair_ID"].dropna().astype(str).unique())
     print(f"\nNumber of unique labeled pairs (train set, by Pair_ID): {len(train_pairs)}")
 
-    # All possible pairs present in the all-pairs feature df
     all_pairs = set(df_allpairs["Pair_ID"].dropna().astype(str).unique())
-    print(f"Number of pairs in all-pairs feature file (by Pair_ID): {len(all_pairs)}")
+    print(f"Number of pairs in all-pairs table (by Pair_ID): {len(all_pairs)}")
 
-    # Novel = in all_pairs but not in train_pairs
     novel_pair_ids = sorted(all_pairs - train_pairs)
-    print(f"Number of 'novel' pairs (no labels in training df, by Pair_ID): {len(novel_pair_ids)}")
+    print(f"Number of novel pairs (not in labeled training set): {len(novel_pair_ids)}")
 
     df_novel = df_allpairs[df_allpairs["Pair_ID"].astype(str).isin(novel_pair_ids)].copy()
-    print("Novel pairs feature df shape:", df_novel.shape)
+    print("Novel pairs df shape:", df_novel.shape)
 
     return df_novel
 
-
-# ==========================
-# 4) Predict on novel pairs & report top 40 synergy + top 40 antagonism
-# ==========================
 
 def predict_novel_pairs(
     model,
@@ -235,30 +280,22 @@ def predict_novel_pairs(
     out_dir: Path,
     top_k: int = 40,
     fmap: FeatureMapper | None = None,
-    cc_features_df: pd.DataFrame | None = None
+    cc_features_df: pd.DataFrame | None = None,
 ):
     if df_novel.empty:
         print("\nNo novel pairs found. Nothing to predict.")
         return
 
-    # ---- Compute compact CC similarities for novel pairs ----
-    if fmap is not None and cc_features_df is not None:
-        print("Computing compact CC distances (cos_block_*, euc_block_*) for novel pairs...")
-        df_novel = fmap.compact_similarity(
-            combinations_df=df_novel,
-            features_df=cc_features_df,
-            block_size=128,  # adjust if your CC embedding block size differs
-        )
-    else:
-        print("WARNING: fmap/cc_features_df not provided, skipping CC distance computation.")
+    if fmap is None or cc_features_df is None:
+        raise ValueError("fmap and cc_features_df are required.")
 
-    # ---- Predict probabilities ----
+    print("Building full elementwise CC-only features for novel pairs...")
+    df_novel = fmap.elementwise_similarity(df_novel, cc_features_df)
+
     missing = set(feat_cols) - set(df_novel.columns)
     if missing:
         raise KeyError(
-            f"Novel pairs df is missing feature columns: {missing}.\n"
-            "Ensure the all-pairs feature file uses the same feature engineering "
-            "and column names as the labeled file."
+            f"Novel pairs df is missing feature columns: {missing}."
         )
 
     X_novel = df_novel[feat_cols].copy()
@@ -271,40 +308,19 @@ def predict_novel_pairs(
     df_novel["p_synergy"] = p_synergy
     df_novel["p_antagonism"] = p_antagonism
 
-    # ---- CC block columns (if present) ----
-    cc_cols = [
-        c for c in df_novel.columns
-        if c.startswith("cos_block_") or c.startswith("euc_block_")
-    ]
-
-    agg_dict = {
-        "Drug A": "first",
-        "Drug B": "first",
-        "Drug Pair": "first",
-        "p_synergy": "max",
-        "p_antagonism": "max",
-    }
-    # CC distances should be identical for a given pair, so "first" is fine
-    for c in cc_cols:
-        agg_dict[c] = "first"
-
     agg = (
         df_novel.groupby("Pair_ID", as_index=False)
-        .agg(agg_dict)
+        .agg(
+            {
+                "Drug A": "first",
+                "Drug B": "first",
+                "Drug Pair": "first",
+                "p_synergy": "max",
+                "p_antagonism": "max",
+            }
+        )
     )
 
-    # ---- Collapse 50 CC block features -> 2 summary features ----
-    cos_cols_agg = [c for c in agg.columns if c.startswith("cos_block_")]
-    euc_cols_agg = [c for c in agg.columns if c.startswith("euc_block_")]
-
-    if cos_cols_agg and euc_cols_agg:
-        agg["cc_cosine_mean"] = agg[cos_cols_agg].mean(axis=1)
-        agg["cc_euclidean_mean"] = agg[euc_cols_agg].mean(axis=1)
-
-        # If you *only* want the 2 summary features in the CSVs, drop blocks:
-        agg = agg.drop(columns=cos_cols_agg + euc_cols_agg)
-
-    # ---------- Top K synergy ----------
     agg_syn = agg.sort_values("p_synergy", ascending=False).reset_index(drop=True)
     top_syn = agg_syn.head(top_k).copy()
 
@@ -315,13 +331,12 @@ def predict_novel_pairs(
     print(f"\n=== Top {top_k} novel pairs by P(synergy) ===")
     for i, row in top_syn.iterrows():
         rank = i + 1
-        pair_name = row["Drug Pair"]
-        da = row["Drug A"]
-        db = row["Drug B"]
-        p = row["p_synergy"]
-        print(f"{rank:2d}. {pair_name}  (Drug A: {da}, Drug B: {db})  ->  P(synergy) = {p:.3f}")
+        print(
+            f"{rank:2d}. {row['Drug Pair']}  "
+            f"(Drug A: {row['Drug A']}, Drug B: {row['Drug B']})  "
+            f"->  P(synergy) = {row['p_synergy']:.3f}"
+        )
 
-    # ---------- Top K antagonism ----------
     agg_ant = agg.sort_values("p_antagonism", ascending=False).reset_index(drop=True)
     top_ant = agg_ant.head(top_k).copy()
 
@@ -332,45 +347,43 @@ def predict_novel_pairs(
     print(f"\n=== Top {top_k} novel pairs by P(antagonism) ===")
     for i, row in top_ant.iterrows():
         rank = i + 1
-        pair_name = row["Drug Pair"]
-        da = row["Drug A"]
-        db = row["Drug B"]
-        p = row["p_antagonism"]
-        print(f"{rank:2d}. {pair_name}  (Drug A: {da}, Drug B: {db})  ->  P(antagonism) = {p:.3f}")
+        print(
+            f"{rank:2d}. {row['Drug Pair']}  "
+            f"(Drug A: {row['Drug A']}, Drug B: {row['Drug B']})  "
+            f"->  P(antagonism) = {row['p_antagonism']:.3f}"
+        )
 
-
-# ==========================
-# 5) Main
-# ==========================
 
 def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    df_train, X, y_enc, le, feat_cols = load_training_data(FILTERED_PATH)
+    df_train, X, y_enc, le, feat_cols, cc_df = load_training_data_from_raw(
+        COMBOS_PATH,
+        CC_FEATURES_PATH,
+    )
 
-    m_final, pos_idx = train_final_model(X, y_enc, le, feat_cols, BEST_PARAMS_PATH)
+    m_final, pos_idx, selected_feat_cols = train_final_model(
+        X, y_enc, le, feat_cols, BEST_PARAMS_PATH
+    )
 
-    save_artifacts(m_final, le, feat_cols, OUT_DIR)
+    save_artifacts(m_final, le, selected_feat_cols, OUT_DIR)
 
-    df_allpairs = load_allpairs_features(ALLPAIRS_PATH)
+    df_allpairs = build_all_possible_pairs(cc_df)
     df_novel = get_novel_pairs(df_train, df_allpairs)
 
     fmap = FeatureMapper()
-    cc_features_df = load_cc_features(CC_FEATURES_PATH)
 
     predict_novel_pairs(
         model=m_final,
         pos_idx=pos_idx,
-        feat_cols=feat_cols,
+        feat_cols=selected_feat_cols,
         df_novel=df_novel,
         out_dir=OUT_DIR,
         top_k=40,
         fmap=fmap,
-        cc_features_df=cc_features_df
+        cc_features_df=cc_df,
     )
 
 
 if __name__ == "__main__":
     main()
-
-

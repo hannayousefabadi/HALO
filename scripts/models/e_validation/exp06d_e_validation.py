@@ -4,26 +4,28 @@ External validation for EXP06d model on Chandrasekaran dataset.
 
 Pipeline:
 
-1. Load EXP06d training matrix:
-   - CC-only elementwise features already selected by EXP05d
-   - file: elementwise_features_filtered_cv1_cc_only.csv
+1. Rebuild the internal EXP06d training matrix inside this script:
+   - full CC-only elementwise features
+   - labels recomputed with Bliss cutoff ±0.05
 
 2. Load best hyperparameters from EXP06d:
    - file: best_params_cv1.json
 
 3. Run 5-fold CV1 with those fixed params (no nested search) for
    internal sanity and to keep a CV1 baseline consistent with EXP06d.
+   - feature selection is performed on each outer-train only
 
-4. Train a final LightGBM model on ALL training rows.
+4. Train a final LightGBM model on ALL internal training rows.
+   - feature selection is performed once on all internal training rows only
 
-5. External evaluation on Chandrasekaran (EV1-derived) dataset:
-   - Input: chan_cleaned_data.csv (Drug A/B, Inchikeys, alpha, Interaction Type, etc.)
-   - Build full CC-only elementwise features via FeatureMapper.elementwise_similarity.
-   - Subset those features to the exact same feat_cols used in EXP06d.
+5. External evaluation on Chandrasekaran dataset:
+   - Input: chandrasekaran_cleaned_data.csv
+   - Build full CC-only elementwise features via FeatureMapper.elementwise_similarity
+   - Subset those features to the exact same final selected features
    - Run final model, produce predictions, metrics, ROC/PR curve data
-     and confusion matrix for plotting.
+     and confusion matrix for plotting
 
-Expected external base file (chan_cleaned_data.csv) columns:
+Expected external base file columns:
     'Drug A', 'Drug B', 'Drug A Inchikey', 'Drug B Inchikey',
     'Drug Pair' (optional, will be created if missing),
     'Experimental Interaction Score', 'Interaction Type'
@@ -48,18 +50,14 @@ from sklearn.metrics import (
     classification_report,
 )
 
-# ==========================
-# Paths and Basic config
-# ==========================
-
-from halo.paths import MODEL_RESULTS, INTERIM, CC_FEATURES
+from halo.paths import MODEL_RESULTS, INTERIM, CC_FEATURES, PROCESSED
 from halo.mappers.feature_mapper import FeatureMapper
+from halo.shared_utils.data_io import classify_interaction
 
 
 SCHEME = "CV1"
-
-# Training features (same as original EXP06d)
-filtered_path = MODEL_RESULTS / "exp05d_lgbm_bin_nosspace_elementwise_featselect_bliss005" / "elementwise_features_filtered_cv1_cc_only.csv"
+corr_min = 0.01
+keep_top_frac = 0.30
 
 # Original EXP06d result dir (where best_params_cv1.json lives)
 exp06d_out = MODEL_RESULTS / "exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv_bliss005"
@@ -71,23 +69,88 @@ best_params_path = exp06d_out / "best_params_cv1.json"
 
 external_base_path = INTERIM / "source_d_chandrasekaran" / "chandrasekaran_cleaned_data.csv"
 
-# Path to CC single-compound features (same as EXP05d)
+# Internal raw inputs
 cc_path = CC_FEATURES / "cc_features_concat_25x128.csv"
+combos_path = PROCESSED / "halo_training_dataset.csv"
+
+
+def select_features_lgbm(
+    X_train: pd.DataFrame,
+    y_train: np.ndarray,
+    feat_cols: list[str],
+    corr_min: float = 0.01,
+    keep_top_frac: float = 0.30,
+) -> list[str]:
+    """
+    Feature selection using training data only.
+    """
+    var_series = X_train.var()
+    kept_after_var = [c for c in feat_cols if var_series[c] > 0.0]
+
+    if len(kept_after_var) == 0:
+        raise ValueError("No features remained after variance filtering.")
+
+    kept_after_corr = []
+    y_train_s = pd.Series(y_train, index=X_train.index)
+
+    for col in kept_after_var:
+        corr = X_train[col].corr(y_train_s)
+        if corr is not None and np.isfinite(corr) and abs(corr) >= corr_min:
+            kept_after_corr.append(col)
+
+    if not kept_after_corr:
+        kept_after_corr = kept_after_var.copy()
+
+    fs_model = lgb.LGBMClassifier(
+        objective="binary",
+        n_estimators=2000,
+        random_state=777,
+        n_jobs=1,
+        learning_rate=0.03,
+        max_depth=3,
+        num_leaves=15,
+        min_data_in_leaf=200,
+        feature_fraction=0.4,
+        bagging_fraction=0.8,
+        bagging_freq=1,
+        lambda_l2=50.0,
+        lambda_l1=0.0,
+        max_bin=127,
+        min_gain_to_split=0.05,
+    )
+
+    fs_model.fit(X_train[kept_after_corr], y_train)
+
+    feat_imp = pd.Series(
+        fs_model.feature_importances_,
+        index=kept_after_corr,
+    ).sort_values(ascending=False)
+
+    n_keep = max(1, int(len(feat_imp) * keep_top_frac))
+    return feat_imp.index[:n_keep].tolist()
 
 
 # ==========================
-# 1) Load training data & features (EXP06d training matrix)
+# 1) Load internal training data and rebuild full CC-only features
 # ==========================
+if not cc_path.exists():
+    raise FileNotFoundError(f"CC features file not found at: {cc_path}")
+if not combos_path.exists():
+    raise FileNotFoundError(f"Training dataset not found at: {combos_path}")
 
-if not filtered_path.exists():
-    raise FileNotFoundError(f"Training CSV not found at: {filtered_path}")
+cc_df = pd.read_csv(cc_path).copy()
+combos_df = pd.read_csv(combos_path).copy()
 
-df = pd.read_csv(filtered_path).copy()
-print("Loaded reduced training df shape:", df.shape)
-print(df["Interaction Type"].value_counts())
+fm = FeatureMapper()
+df = fm.elementwise_similarity(combos_df, cc_df)
 
-# Keep only synergy vs antagonism
+print("Loaded full internal training df shape:", df.shape)
+
+df["Interaction Type"] = df["Bliss Score"].apply(
+    lambda x: classify_interaction(x, additivity_cutoff=0.05)
+)
 df = df[df["Interaction Type"].isin(["synergy", "antagonism"])].copy()
+
 print("\nAfter filtering to synergy/antagonism:", df.shape)
 print(df["Interaction Type"].value_counts())
 
@@ -103,7 +166,7 @@ drop_cols = [
     "Method",
     "Interaction Type",
     "Source",
-    "Drug Pair"
+    "Drug Pair",
 ]
 feat_cols = [c for c in df.columns if c not in drop_cols]
 
@@ -117,9 +180,8 @@ pairs = df["Drug Pair"].astype(str).values
 n = len(df)
 
 print(f"\nTotal samples: {n}")
-print(f"Feature columns (CC-only reduced): {len(feat_cols)}")
+print(f"Full feature columns (CC-only): {len(feat_cols)}")
 
-# mapping int -> label
 inv_label_map = {
     int(code): cls for cls, code in zip(le.classes_, le.transform(le.classes_))
 }
@@ -130,7 +192,6 @@ ant_code = le.transform(["antagonism"])[0]
 # ==========================
 # 2) Load best hyperparameters
 # ==========================
-
 if not best_params_path.exists():
     raise FileNotFoundError(f"best_params JSON not found at: {best_params_path}")
 
@@ -143,11 +204,9 @@ print(best_params)
 
 
 # ==========================
-# 3) Outer splits (CV1) – 5-fold Drug Pair grouping
+# 3) Outer splits (CV1)
 # ==========================
-
 def make_splits_cv1(n_splits=5, verbose=True):
-    """5-fold outer CV over Drug Pair groups (CV1)."""
     try:
         outer_cv = StratifiedGroupKFold(
             n_splits=n_splits, shuffle=True, random_state=42
@@ -174,9 +233,9 @@ outer_splits = make_splits_cv1(n_splits=5, verbose=True)
 
 
 # ==========================
-# 4) Run outer CV with FIXED best_params (no nested search)
+# 4) Run outer CV with fixed best_params
+#    and outer-train-only feature selection
 # ==========================
-
 lgb.register_logger(
     type(
         "SilentLogger",
@@ -206,7 +265,17 @@ for fold_idx, (tr_idx, te_idx) in enumerate(outer_splits, 1):
     df_tr = df.iloc[tr_idx].reset_index(drop=True)
     df_te = df.iloc[te_idx].reset_index(drop=True)
 
-    # ---- Train LightGBM with fixed best_params ----
+    selected_outer = select_features_lgbm(
+        X_train=X_tr,
+        y_train=y_tr,
+        feat_cols=feat_cols,
+        corr_min=corr_min,
+        keep_top_frac=keep_top_frac,
+    )
+
+    X_tr_sel = X_tr[selected_outer].copy()
+    X_te_sel = X_te[selected_outer].copy()
+
     m_final = lgb.LGBMClassifier(
         objective="binary",
         n_estimators=4000,
@@ -214,12 +283,11 @@ for fold_idx, (tr_idx, te_idx) in enumerate(outer_splits, 1):
         n_jobs=4,
         **best_params,
     )
-    m_final.fit(X_tr, y_tr)
+    m_final.fit(X_tr_sel, y_tr)
 
     pos_idx = np.flatnonzero(m_final.classes_ == synergy_code)[0]
 
-    # ---- Evaluate on held-out test for this fold ----
-    p_te = m_final.predict_proba(X_te)[:, pos_idx]
+    p_te = m_final.predict_proba(X_te_sel)[:, pos_idx]
     y_pred = (p_te >= 0.5).astype(int)
 
     y_te_bin = (y_te == synergy_code).astype(int)
@@ -239,8 +307,7 @@ for fold_idx, (tr_idx, te_idx) in enumerate(outer_splits, 1):
         classification_report(y_te, y_pred, target_names=le.classes_),
     )
 
-    # Train-set overfitting check
-    p_tr = m_final.predict_proba(X_tr)[:, pos_idx]
+    p_tr = m_final.predict_proba(X_tr_sel)[:, pos_idx]
     y_tr_pred = (p_tr >= 0.5).astype(int)
     y_tr_bin = (y_tr == synergy_code).astype(int)
 
@@ -256,7 +323,6 @@ for fold_idx, (tr_idx, te_idx) in enumerate(outer_splits, 1):
         "| Test F1w:", round(f1_weighted_test, 3),
     )
 
-    # store per-fold metrics
     fold_results.append(
         dict(
             fold=fold_idx,
@@ -268,10 +334,10 @@ for fold_idx, (tr_idx, te_idx) in enumerate(outer_splits, 1):
             f1_weighted_train=f1_weighted_train,
             n_train=len(tr_idx),
             n_test=len(te_idx),
+            n_selected_features=len(selected_outer),
         )
     )
 
-    # store predictions for later analysis (internal)
     test_out_fold = pd.DataFrame(
         {
             "fold": fold_idx,
@@ -301,13 +367,11 @@ for fold_idx, (tr_idx, te_idx) in enumerate(outer_splits, 1):
     all_test_dfs.append(test_out_fold)
     all_train_dfs.append(train_out_fold)
 
-    # accumulate confusion matrix
     order = ["antagonism", "synergy"]
     order_idx = le.transform(order)
     cm = confusion_matrix(y_te, y_pred, labels=order_idx)
     cm_total = cm if cm_total is None else cm_total + cm
 
-# Save internal CV predictions/metrics (optional but nice to have)
 test_out_all = pd.concat(all_test_dfs, ignore_index=True)
 train_out_all = pd.concat(all_train_dfs, ignore_index=True)
 test_out_all.to_csv(ext_out / "internal_test_predictions_cv1.csv", index=False)
@@ -320,7 +384,17 @@ print("\nSaved internal CV metrics & predictions to:", ext_out)
 
 # ==========================
 # 5) Train FINAL model on ALL training data
+#    with feature selection on ALL internal training data only
 # ==========================
+selected_features_final = select_features_lgbm(
+    X_train=X,
+    y_train=y_enc,
+    feat_cols=feat_cols,
+    corr_min=corr_min,
+    keep_top_frac=keep_top_frac,
+)
+
+X_final = X[selected_features_final].copy()
 
 final_model = lgb.LGBMClassifier(
     objective="binary",
@@ -329,111 +403,64 @@ final_model = lgb.LGBMClassifier(
     n_jobs=4,
     **best_params,
 )
-final_model.fit(X, y_enc)
+final_model.fit(X_final, y_enc)
 pos_idx_final = np.flatnonzero(final_model.classes_ == synergy_code)[0]
 print("\nTrained FINAL model on all training data.")
+print("Selected features for FINAL model:", len(selected_features_final))
 
 
 # ==========================
-# 6) Build elementwise CC features for external set (EXP05d-style)
+# 6) Build elementwise CC features for external set
 # ==========================
-
 if not external_base_path.exists():
     raise FileNotFoundError(f"External base dataset not found at: {external_base_path}")
-if not cc_path.exists():
-    raise FileNotFoundError(f"CC features file not found at: {cc_path}")
 
 ext_base = pd.read_csv(external_base_path).copy()
 print("\nLoaded external base dataset:", external_base_path)
 print("Shape:", ext_base.shape)
 
-# Ensure required columns exist
 required_cols = ["Drug A", "Drug B", "Drug A Inchikey", "Drug B Inchikey"]
 missing_req = [c for c in required_cols if c not in ext_base.columns]
 if missing_req:
     raise ValueError(f"External base dataset is missing required columns: {missing_req}")
 
-# Normalise inchikeys (defensive)
 ext_base["Drug A Inchikey"] = ext_base["Drug A Inchikey"].astype(str).str.upper().str.strip()
 ext_base["Drug B Inchikey"] = ext_base["Drug B Inchikey"].astype(str).str.upper().str.strip()
 
-# Ensure Drug Pair exists
 if "Drug Pair" not in ext_base.columns:
     ext_base["Drug Pair"] = ext_base.apply(
         lambda x: "::".join(sorted([x["Drug A Inchikey"], x["Drug B Inchikey"]])),
         axis=1,
     )
 
-# ---- Remove external pairs that appear in training (leakage guard) ----
-# train_pairs = set(df["Drug Pair"].astype(str).values)
-
-# before = len(ext_base)
-# overlap_mask = ext_base["Drug Pair"].astype(str).isin(train_pairs)
-# n_overlap = int(overlap_mask.sum())
-
-# ext_base = ext_base.loc[~overlap_mask].copy()
-# after = len(ext_base)
-
-# print(f"[Leakage guard] External rows before: {before}")
-# print(f"[Leakage guard] Overlapping pairs removed: {n_overlap}")
-# print(f"[Leakage guard] External rows after: {after}")
-# # ---- External drug coverage after removing overlapping PAIRS ----
-# # (Uses Drug A/Drug B columns, plus Inchikey-based count for sanity)
-
-# # unique drugs by name
-# drug_names = pd.concat(
-#     [ext_base["Drug A"].astype(str).str.strip(),
-#      ext_base["Drug B"].astype(str).str.strip()],
-#     ignore_index=True,
-# ).replace("", np.nan).dropna().unique()
-
-# # unique drugs by inchikey (more robust if names vary)
-# drug_inchikeys = pd.concat(
-#     [ext_base["Drug A Inchikey"].astype(str).str.strip(),
-#      ext_base["Drug B Inchikey"].astype(str).str.strip()],
-#     ignore_index=True,
-# ).replace("", np.nan).dropna().unique()
-
-# print(f"[Leakage guard] Unique drugs remaining (by name)    : {len(drug_names)}")
-# print(f"[Leakage guard] Unique drugs remaining (by Inchikey): {len(drug_inchikeys)}")
-
-
-# Load CC single-compound features
-cc_df = pd.read_csv(cc_path).copy()
-
-# Build full elementwise CC-only feature matrix for external set
-fm = FeatureMapper()
 ext_elem = fm.elementwise_similarity(ext_base, cc_df)
 
 print("Elementwise external matrix shape (before label filtering):", ext_elem.shape)
 
-# Expect Interaction Type already as 'synergy'/'antagonism' in ext_elem
 if "Interaction Type" not in ext_elem.columns:
     raise ValueError("External elementwise matrix lacks 'Interaction Type' column.")
 
 ext_elem = ext_elem[ext_elem["Interaction Type"].isin(["synergy", "antagonism"])].copy()
 print("External elementwise after filtering to synergy/antagonism:", ext_elem.shape)
 
-# ==========================
-# 7) Align features & predict on external set
-# ==========================
 
-# Check that external elementwise has all the feat_cols used in training
-missing_in_ext = set(feat_cols) - set(ext_elem.columns)
+# ==========================
+# 7) Align final selected features & predict on external set
+# ==========================
+missing_in_ext = set(selected_features_final) - set(ext_elem.columns)
 if missing_in_ext:
     raise ValueError(
-        "External elementwise dataset is missing feature columns used in training. "
+        "External elementwise dataset is missing final selected feature columns. "
         f"Example missing cols: {sorted(list(missing_in_ext))[:10]}"
     )
 
-X_ext = ext_elem[feat_cols].copy()
+X_ext = ext_elem[selected_features_final].copy()
 y_ext_text = ext_elem["Interaction Type"].copy()
 y_ext = le.transform(y_ext_text)
 y_ext_bin = (y_ext == synergy_code).astype(int)
 
 print("\nExternal set size (after alignment):", len(ext_elem))
 
-# Predict
 p_synergy_ext = final_model.predict_proba(X_ext)[:, pos_idx_final]
 y_pred_ext = (p_synergy_ext >= 0.5).astype(int)
 y_pred_ext_label = [inv_label_map[int(v)] for v in y_pred_ext]
@@ -444,7 +471,6 @@ ext_elem["p_synergy"] = p_synergy_ext
 ext_elem["y_pred_int"] = y_pred_ext
 ext_elem["y_pred_label"] = y_pred_ext_label
 
-# Confusion matrix & scalar metrics
 cm_ext = confusion_matrix(y_ext, y_pred_ext, labels=[ant_code, synergy_code])
 tn, fp, fn, tp = cm_ext.ravel()
 
@@ -466,16 +492,14 @@ print(
     classification_report(y_ext, y_pred_ext, target_names=le.classes_),
 )
 
+
 # ==========================
 # 8) Save everything needed for plotting
 # ==========================
-
-# Per-pair predictions
 ext_pred_path = ext_out / "external_predictions_chandrasekaran.csv"
 ext_elem.to_csv(ext_pred_path, index=False)
 print("\nSaved external per-pair predictions to:", ext_pred_path)
 
-# Scalar metrics
 metrics_ext = pd.DataFrame(
     [{
         "dataset": "chandrasekaran_external",
@@ -487,19 +511,19 @@ metrics_ext = pd.DataFrame(
         "fp": int(fp),
         "fn": int(fn),
         "tp": int(tp),
+        "n_selected_features_final": int(len(selected_features_final)),
     }]
 )
 metrics_ext_path = ext_out / "external_metrics_chandrasekaran.csv"
 metrics_ext.to_csv(metrics_ext_path, index=False)
 print("Saved external summary metrics to:", metrics_ext_path)
 
-# ROC + PR curves (for plotting script)
 fpr, tpr, roc_thr = roc_curve(y_ext_bin, p_synergy_ext)
 prec, rec, pr_thr = precision_recall_curve(y_ext_bin, p_synergy_ext)
 
 roc_df = pd.DataFrame({"fpr": fpr, "tpr": tpr, "threshold": roc_thr})
 pr_df = pd.DataFrame({"recall": rec, "precision": prec})
-pr_thr_df = pd.DataFrame({"threshold": pr_thr})  # len = len(prec)-1
+pr_thr_df = pd.DataFrame({"threshold": pr_thr})
 
 roc_df.to_csv(ext_out / "external_roc_curve_chandrasekaran.csv", index=False)
 pr_df.to_csv(ext_out / "external_pr_curve_chandrasekaran.csv", index=False)
@@ -507,7 +531,6 @@ pr_thr_df.to_csv(ext_out / "external_pr_thresholds_chandrasekaran.csv", index=Fa
 
 print("Saved ROC and PR curve data to:", ext_out)
 
-# Confusion matrix table
 cm_df = pd.DataFrame(
     cm_ext,
     index=["true_antagonism", "true_synergy"],
