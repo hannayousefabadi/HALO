@@ -418,43 +418,45 @@ def plot_panel_C(ax, df_importance, meta, n_cc_dims):
 def plot_panel_D(ax, cc_vs_ss_summary: pd.DataFrame):
     df = cc_vs_ss_summary.copy()
 
-    order = ["CC", "SS"]
-    present = [g for g in order if g in df["group"].values]
-    others = [g for g in df["group"] if g not in present]
-    ordered_groups = present + others
+    desired_order = ["CC", "SS"]
+    value_map = dict(zip(df["group"], df["fraction_of_total_gain"]))
 
-    df["group"] = pd.Categorical(df["group"], categories=ordered_groups, ordered=True)
-    df = df.sort_values("group")
+    plot_df = pd.DataFrame({
+        "group": desired_order,
+        "fraction_of_total_gain": [value_map.get(g, 0.0) for g in desired_order],
+    })
 
-    colors_map = {
-        "CC": MAIN_BLUE,
-        "SS": PASTEL_PEACH,
-        "Unknown": PASTEL_GREEN,
-    }
-    colors = [colors_map.get(g, PASTEL_GREEN) for g in df["group"]]
+    colors = []
+    for g, v in zip(plot_df["group"], plot_df["fraction_of_total_gain"]):
+        if g == "SS" and v == 0:
+            colors.append("white")
+        elif g == "CC":
+            colors.append(MAIN_BLUE)
+        else:
+            colors.append(PASTEL_PEACH)
 
-    y = df["fraction_of_total_gain"]
-
-    ax.bar(
-        df["group"],
-        y,
+    bars = ax.bar(
+        plot_df["group"],
+        plot_df["fraction_of_total_gain"],
         color=colors,
         edgecolor=BAR_EDGE_COLOR,
         linewidth=BAR_EDGE_WIDTH,
     )
-    ax.set_ylabel("Fraction of total gain importance")
 
-    for i, v in enumerate(y):
+    ax.set_ylabel("Fraction of total gain importance")
+    ax.set_ylim(0, 1.15)
+
+    for bar, group, v in zip(bars, plot_df["group"], plot_df["fraction_of_total_gain"]):
+        x = bar.get_x() + bar.get_width() / 2
+        y_text = v + 0.03 if v > 0 else 0.03
         ax.text(
-            i,
-            v + 0.03,
+            x,
+            y_text,
             f"{v*100:.1f}%",
             ha="center",
             va="bottom",
             fontsize=ANNOT_SIZE,
         )
-
-    ax.set_ylim(0, 1.15)
 
     ax.set_title(
         r"$\mathbf{D.}$" + "  CC vs strain-space normalized gain (HALO-S-CV1)",
@@ -462,7 +464,6 @@ def plot_panel_D(ax, cc_vs_ss_summary: pd.DataFrame):
         loc="center",
         pad=10,
     )
-
 
 # ==========================
 # Assemble Fig 3
