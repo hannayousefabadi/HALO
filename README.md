@@ -21,7 +21,6 @@ HALO_repo/
 ├── notebooks/
 ├── results/
 ├── figures/
-├── paper/
 └── README.md
 ```
 
@@ -55,9 +54,6 @@ HALO_repo/
 
 - **`results/`**  
   Model outputs, logs, metrics, and intermediate experiment artifacts (generated).
-
-- **`paper/`**  
-  Manuscript source files and supplementary materials.
 
 ---
 
