@@ -5,8 +5,8 @@ Generate Supplementary Figure 1:
 CV comparison schemes, compares predictive performance across evaluation schemes and model variants.
 
 Panel outputs:
-- A: Effect of CV strictness (HALO-Base vs HALO-S-CV1 vs HALO-S-CV2).
-- B: Model variants under CV1 (HALO-S-CV1 vs HALO-CV1).
+- A: Effect of CV strictness (M1 vs M2 vs M4).
+- B: Model variants under CV1 (HALO vs M2).
 """
 
 import numpy as np
@@ -31,14 +31,14 @@ DPI = 600
 metric_labels = ["Accuracy", "F1-macro", "ROC-AUC"]
 
 # Panel A: CV strictness
-labels_A = ["HALO-Base", "HALO-S-CV1", "HALO-S-CV2"]
+labels_A = ["M1", "M2", "M4"]
 acc_A = np.array([0.76, 0.68, 0.50])
 f1_A  = np.array([0.76, 0.68, 0.48])
 auc_A = np.array([0.84, 0.74, 0.52])
 values_A = np.vstack([acc_A, f1_A, auc_A])
 
 # Panel B: model variants under CV1
-labels_B = ["HALO-S-CV1", "HALO-CV1"]
+labels_B = ["HALO", "M2"]
 acc_B = np.array([0.68, 0.68])
 f1_B  = np.array([0.68, 0.68])
 auc_B = np.array([0.74, 0.74])

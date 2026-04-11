@@ -2,13 +2,13 @@
 """
 Generate Figure 3:
 
-Feature analysis for HALO-CV1 (exp06d) and CC vs SS (HALO-S-CV1, exp06b)
+Feature analysis for HALO (exp06d) and CC vs SS (M2, exp06b)
 
 Output panels:
-- A: Top-20 features by gain-based importance (HALO-CV1, exp06d)
-- B: Grouped importance (CC sublevels + strain-space) – HALO-CV1
-- C: Grouped importance by CC top level + strain-space – HALO-CV1
-- D: CC vs strain-space contributions – HALO-S-CV1 (exp06b)
+- A: Top-20 features by gain-based importance (HALO, exp06d)
+- B: Grouped importance (CC sublevels + strain-space) – HALO
+- C: Grouped importance by CC top level + strain-space – HALO
+- D: CC vs strain-space contributions – M2 (exp06b)
 """
 
 import pandas as pd
@@ -247,7 +247,7 @@ def plot_panel_A(ax, df_importance, meta, n_cc_dims, top_n=20):
     ax.set_xlabel("Gain-based importance", fontsize=LABEL_SIZE)
 
     ax.set_title(
-        r"$\mathbf{A.}$" + "  Top 20 similarity features by gain (HALO-CV1)",
+        r"$\mathbf{A.}$" + "  Top 20 similarity features by gain (HALO)",
         fontsize=TITLE_SIZE,
         loc="center",
         pad=10,
@@ -309,7 +309,7 @@ def plot_panel_B(ax, df_importance, meta, n_cc_dims):
     ax.set_ylabel("Total normalized gain importance")
 
     ax.set_title(
-        r"$\mathbf{B.}$" + "  CC sublevels and strain-space (HALO-CV1)",
+        r"$\mathbf{B.}$" + "  CC sublevels and strain-space (HALO)",
         fontsize=TITLE_SIZE,
         loc="center",
         pad=10,
@@ -391,7 +391,7 @@ def plot_panel_C(ax, df_importance, meta, n_cc_dims):
     ax.set_ylabel("Total normalized gain importance")
 
     ax.set_title(
-        r"$\mathbf{C.}$" + "  CC level contributions to normalized gain (HALO-CV1)",
+        r"$\mathbf{C.}$" + "  CC level contributions to normalized gain (HALO)",
         fontsize=TITLE_SIZE,
         loc="center",
         pad=10,
@@ -412,7 +412,7 @@ def plot_panel_C(ax, df_importance, meta, n_cc_dims):
 
 
 # ==========================
-# Panel D – CC vs SS (exp06b, HALO-S-CV1)
+# Panel D – CC vs SS (exp06b, M2)
 # ==========================
 
 def plot_panel_D(ax, cc_vs_ss_summary: pd.DataFrame):
@@ -459,7 +459,7 @@ def plot_panel_D(ax, cc_vs_ss_summary: pd.DataFrame):
         )
 
     ax.set_title(
-        r"$\mathbf{D.}$" + "  CC vs strain-space normalized gain (HALO-S-CV1)",
+        r"$\mathbf{D.}$" + "  CC vs strain-space normalized gain (M2)",
         fontsize=TITLE_SIZE,
         loc="center",
         pad=10,
