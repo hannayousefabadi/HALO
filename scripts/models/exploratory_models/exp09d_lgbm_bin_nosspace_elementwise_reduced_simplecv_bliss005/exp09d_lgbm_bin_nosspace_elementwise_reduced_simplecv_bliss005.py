@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Experiment: exp09d_lgbm_bin_nosspace_elementwise_reduced_simplecv_bliss005
-(HALO-Base, CC-only, standard CV)
+(M4, CC-only, standard CV)
 
 Config
 - task: binary classification (synergy vs antagonism) after excluding neutral interactions via Bliss cutoff ±0.05

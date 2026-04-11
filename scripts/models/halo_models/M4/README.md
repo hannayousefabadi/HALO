@@ -1,4 +1,4 @@
-# HALO-Base
+# M4
 
 Canonical manuscript model.
 

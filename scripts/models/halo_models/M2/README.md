@@ -1,4 +1,4 @@
-# HALO-S-CV1
+# M2
 
 Canonical manuscript model.
 

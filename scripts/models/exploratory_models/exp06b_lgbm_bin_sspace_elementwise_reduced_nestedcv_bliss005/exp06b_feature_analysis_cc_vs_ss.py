@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Script: exp06b_cc_vs_ss_analysis.py (HALO-S-CV1 feature-group analysis)
+Script: exp06b_cc_vs_ss_analysis.py (M2 feature-group analysis)
 
 Post-hoc feature-group importance analysis for exp06b.
 
@@ -197,7 +197,7 @@ def summarize_topk_counts(df: pd.DataFrame, ks=(20, 50, 100)) -> pd.DataFrame:
 # ==========================
 
 def main():
-    print("\n=== CC vs SS feature-group importance analysis for exp06b (HALO-S-CV1) ===\n")
+    print("\n=== CC vs SS feature-group importance analysis for exp06b (M2) ===\n")
 
     print("Loading feature importances from:", FI_PATH)
     df_imp = load_importances(FI_PATH)

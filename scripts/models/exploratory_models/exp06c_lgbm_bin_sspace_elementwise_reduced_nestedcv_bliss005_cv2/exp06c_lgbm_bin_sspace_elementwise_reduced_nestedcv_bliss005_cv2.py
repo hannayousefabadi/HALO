@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Experiment: exp06c_lgbm_bin_sspace_elementwise_reduced_nestedcv_bliss005_cv2 (HALO-S-CV2)
+Experiment: exp06c_lgbm_bin_sspace_elementwise_reduced_nestedcv_bliss005_cv2 (M1)
 
 Config
 - task: binary classification (synergy vs antagonism), with “synergy” treated as the positive class
