@@ -65,7 +65,7 @@ HALO uses two complementary feature spaces:
 Multi-level chemical and biological descriptors spanning levels **A–E**, with **128 dimensions per sublevel**.
 
 - Features are fetched via the Chemical Checker API.
-- Raw CC signatures are assembled into model-ready matrices.
+- Raw , dC signatures are assembled into model-ready matrices.
 - Final CC feature files are stored under:
 `data/features/chemicalchecker_cc/`
 including:
