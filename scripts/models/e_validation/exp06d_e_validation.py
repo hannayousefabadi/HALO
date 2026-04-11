@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """
-External validation for EXP06d model on Chandrasekaran dataset.
+External validation for HALO model on Chandrasekaran dataset.
 
 Pipeline:
 
-1. Rebuild the internal EXP06d training matrix inside this script:
+1. Rebuild the internal HALO training matrix inside this script:
    - full CC-only elementwise features
    - labels recomputed with Bliss cutoff ±0.05
 
-2. Load best hyperparameters from EXP06d:
+2. Load best hyperparameters from HALO:
    - file: best_params_cv1.json
 
 3. Run 5-fold CV1 with those fixed params (no nested search) for
-   internal sanity and to keep a CV1 baseline consistent with EXP06d.
+   internal sanity and to keep a CV1 baseline consistent with HALO.
    - feature selection is performed on each outer-train only
 
 4. Train a final LightGBM model on ALL internal training rows.
@@ -59,7 +59,7 @@ SCHEME = "CV1"
 corr_min = 0.01
 keep_top_frac = 0.30
 
-# Original EXP06d result dir (where best_params_cv1.json lives)
+# Original HALO result dir (where best_params_cv1.json lives)
 exp06d_out = MODEL_RESULTS / "exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv_bliss005"
 
 ext_out = MODEL_RESULTS / "e_validation" / "external_eval_chandrasekaran"

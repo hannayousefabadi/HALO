@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Experiment: exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv_bliss005 (HALO-CV1)
+Experiment: exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv_bliss005 (HALO)
 
 Config
 - task: binary classification (synergy vs antagonism) with Bliss additivity cutoff ±0.05

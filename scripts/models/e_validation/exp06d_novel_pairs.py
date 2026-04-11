@@ -2,7 +2,7 @@
 """
 Experiment: exp06_novel_pairs
 
-- Trains the final HALO-CV1 model (exp06d config) on the full labeled dataset.
+- Trains the final HALO model (exp06d config) on the full labeled dataset.
 - Performs feature selection once on the full labeled training set only.
 - Generates novel drug-pair predictions by:
     * taking all possible pairs among the unique compounds (by Inchikey),
@@ -107,6 +107,22 @@ def load_cc_features(cc_features_path: Path) -> pd.DataFrame:
     return df_cc
 
 
+def similarity_calculation(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calculate row-wise CC Cosine and Euclidean similarity means.
+    return dataframe with two new columns:
+     - cc_cosine_mean
+      - cc_euclidean_mean
+    """
+    cos_cols = [c for c in df.columns if c.startswith("cos_elem_")]
+    euc_cols = [c for c in df.columns if c.startswith("euc_elem_")]
+
+    df["cc_cosine_mean"] = df[cos_cols].mean()
+    df["cc_euclidean_mean"] = df[euc_cols].mean()
+
+    return df
+
+
 def load_training_data_from_raw(combos_path: Path, cc_features_path: Path):
     if not combos_path.exists():
         raise FileNotFoundError(f"Training dataset not found at: {combos_path}")
@@ -131,6 +147,16 @@ def load_training_data_from_raw(combos_path: Path, cc_features_path: Path):
         lambda r: _make_pair_id(r["Drug A Inchikey"], r["Drug B Inchikey"]),
         axis=1,
     )
+    df = similarity_calculation(df)
+    cc_cos_mean_anta = df[df["Interaction Type"] == "antagonism"]["cc_cosine_mean"].mean()
+    cc_euc_mean_syn = df[df["Interaction Type"] == "synergy"]["cc_euclidean_mean"].mean()
+    cc_cos_mean_syn = df[df["Interaction Type"] == "synergy"]["cc_cosine_mean"].mean()
+    cc_euc_mean_anta = df[df["Interaction Type"] == "antagonism"]["cc_euclidean_mean"].mean()
+
+    print(f"Mean of Cosine similarity in antagonistic pairs of HALO training dataset: {cc_cos_mean_anta}")    
+    print(f"Mean of Euclidean similarity in synergistic pairs of HALO training dataset: {cc_euc_mean_syn}")
+    print(f"Mean of Cosine similarity in synergistic pairs of HALO training dataset: {cc_cos_mean_syn}")
+    print(f"Mean of Euclidean similarity in antagonistic pairs of HALO training dataset: {cc_euc_mean_anta}")
 
     drop_cols = [
         "Drug A",
@@ -144,6 +170,8 @@ def load_training_data_from_raw(combos_path: Path, cc_features_path: Path):
         "Source",
         "Drug Pair",
         "Pair_ID",
+        "cc_cosine_mean",
+        "cc_euclidean_mean"
     ]
     feat_cols = [c for c in df.columns if c not in drop_cols]
 
@@ -191,7 +219,7 @@ def train_final_model(X, y_enc, le, feat_cols, best_params_path: Path):
         **best_params,
     )
     m_final.fit(X_sel, y_enc)
-    print("\nTrained final HALO-CV1 model on full labeled dataset.")
+    print("\nTrained final HALO model on full labeled dataset.")
 
     synergy_code = le.transform(["synergy"])[0]
     pos_idx = np.flatnonzero(m_final.classes_ == synergy_code)[0]
@@ -204,19 +232,19 @@ def save_artifacts(model, le, feat_cols, out_dir: Path):
     out_dir.mkdir(parents=True, exist_ok=True)
 
     booster = model.booster_
-    booster_path = out_dir / "model_final_halo_cv1.txt"
+    booster_path = out_dir / "model_final_halo.txt"
     booster.save_model(str(booster_path))
     print("Saved LightGBM booster to:", booster_path)
 
-    model_path = out_dir / "model_final_halo_cv1.joblib"
+    model_path = out_dir / "model_final_halo.joblib"
     dump(model, model_path)
     print("Saved sklearn model to:", model_path)
 
-    le_path = out_dir / "label_encoder_halo_cv1.joblib"
+    le_path = out_dir / "label_encoder_halo.joblib"
     dump(le, le_path)
     print("Saved label encoder to:", le_path)
 
-    feat_path = out_dir / "feat_cols_cv1.json"
+    feat_path = out_dir / "feat_cols.json"
     with open(feat_path, "w") as f:
         json.dump(feat_cols, f, indent=2)
     print("Saved feature list to:", feat_path)
@@ -282,6 +310,20 @@ def predict_novel_pairs(
     fmap: FeatureMapper | None = None,
     cc_features_df: pd.DataFrame | None = None,
 ):
+    """
+    Predict probability of synergy and antagonism for novel pairs
+    
+    model: 
+    pos_idx: 
+    feat_cols: 
+    df_novel: 
+    out_dir: 
+    out_dir: Path
+    top_k: 
+    top_k: int
+    fmap: FeatureMapper | None
+    cc_features_df: pd.DataFrame | None
+    """
     if df_novel.empty:
         print("\nNo novel pairs found. Nothing to predict.")
         return
@@ -291,6 +333,7 @@ def predict_novel_pairs(
 
     print("Building full elementwise CC-only features for novel pairs...")
     df_novel = fmap.elementwise_similarity(df_novel, cc_features_df)
+    df_novel = similarity_calculation(df_novel)
 
     missing = set(feat_cols) - set(df_novel.columns)
     if missing:
@@ -317,6 +360,8 @@ def predict_novel_pairs(
                 "Drug Pair": "first",
                 "p_synergy": "max",
                 "p_antagonism": "max",
+                "cc_cosine_mean": "first",
+                "cc_euclidean_mean": "first",
             }
         )
     )
@@ -324,7 +369,7 @@ def predict_novel_pairs(
     agg_syn = agg.sort_values("p_synergy", ascending=False).reset_index(drop=True)
     top_syn = agg_syn.head(top_k).copy()
 
-    top_syn_path = out_dir / f"novel_pairs_top{top_k}_synergy_halo_cv1.csv"
+    top_syn_path = out_dir / f"novel_pairs_top{top_k}_synergy_halo.csv"
     top_syn.to_csv(top_syn_path, index=False)
     print("Saved top", top_k, "novel synergistic pairs to:", top_syn_path)
 
@@ -340,7 +385,7 @@ def predict_novel_pairs(
     agg_ant = agg.sort_values("p_antagonism", ascending=False).reset_index(drop=True)
     top_ant = agg_ant.head(top_k).copy()
 
-    top_ant_path = out_dir / f"novel_pairs_top{top_k}_antagonism_halo_cv1.csv"
+    top_ant_path = out_dir / f"novel_pairs_top{top_k}_antagonism_halo.csv"
     top_ant.to_csv(top_ant_path, index=False)
     print("Saved top", top_k, "novel antagonistic pairs to:", top_ant_path)
 
@@ -353,6 +398,16 @@ def predict_novel_pairs(
             f"->  P(antagonism) = {row['p_antagonism']:.3f}"
         )
 
+    cc_cos_mean_anta = top_ant["cc_cosine_mean"].mean()
+    cc_euc_mean_syn = top_syn["cc_euclidean_mean"].mean()
+    cc_cos_mean_syn = top_syn["cc_cosine_mean"].mean()
+    cc_euc_mean_anta = top_ant["cc_euclidean_mean"].mean()
+
+    print(f"Mean of Cosine similarity in predicted novel antagonistic pairs: {cc_cos_mean_anta}")    
+    print(f"Mean of Euclidean similarity in predicted novel synergistic pairs: {cc_euc_mean_syn}")
+    print(f"Mean of Cosine similarity in predicted novel synergistic pairs: {cc_cos_mean_syn}")
+    print(f"Mean of Euclidean similarity in predicted novel antagonistic pairs: {cc_euc_mean_anta}")
+    
 
 def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
