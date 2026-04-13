@@ -25,9 +25,6 @@ All preprocessing (missing values, dtypes, column validation, and label construc
 ±0.1 cutoff) is performed upstream in preprocessing notebooks/scripts. This script assumes the processed
 inputs are clean and consistent and that `Interaction Type` already reflects that cutoff.
 
-Class encoding
-The binary target is encoded as {0,1} where 1 corresponds to synergy and is treated as the
-positive class for F1 and ROC-AUC.
 """
 
 import numpy as np
@@ -206,9 +203,9 @@ def main():
                 random_state=42,
             )
             split_gen = outer_cv.split(X, y_enc, groups=pairs)
-        except TypeError:
-            outer_cv = GroupKFold(n_splits=n_splits)
-            split_gen = outer_cv.split(X, y_enc, groups=pairs)
+        # except TypeError:
+        #     outer_cv = GroupKFold(n_splits=n_splits)
+        #     split_gen = outer_cv.split(X, y_enc, groups=pairs)
 
         splits = []
         for fold_idx, (tr_idx, te_idx) in enumerate(split_gen, 1):
@@ -250,9 +247,9 @@ def main():
     selected_counts = []
     fi_per_fold = []
 
-    synergy_code = le.transform(["synergy"])[0]
     ant_code = le.transform(["antagonism"])[0]
-
+    neu_code = le.transform(["neutral"])[0]
+    syn_code = le.transform(["synergy"])[0]
     # ==========================
     # 6) Outer loop
     # ==========================
@@ -425,30 +422,42 @@ def main():
         fi_gain_fold = m_final.booster_.feature_importance(importance_type="gain")
         fi_per_fold.append(dict(zip(selected_outer, fi_gain_fold)))
 
-        pos_idx = np.flatnonzero(m_final.classes_ == synergy_code)[0]
-
         # final evaluation on untouched outer-test
-        p_te = m_final.predict_proba(X_te_sel)[:, pos_idx]
-        y_pred = (p_te >= 0.5).astype(int)
-
-        y_te_bin = (y_te == synergy_code).astype(int)
+        probs = m_final.predict_proba(X_te_sel)
+        y_pred = np.argmax(probs, axis=1)
 
         accuracy_test = accuracy_score(y_te, y_pred)
         f1_macro_test = f1_score(y_te, y_pred, average="macro")
         f1_weighted_test = f1_score(y_te, y_pred, average="weighted")
-        roc_auc_test = roc_auc_score(y_te_bin, p_te)
+        roc_auc_test = roc_auc_score(y_te, probs, multi_class="ovr")
+
+        # per-class metrics (antagonism, neutral, synergy)
+        order = ["antagonism", "neutral", "synergy"]
+        order_idx = le.transform(order)
 
         prec, rec, f1s, _ = precision_recall_fscore_support(
             y_te,
             y_pred,
-            labels=[ant_code, synergy_code],
+            labels=order_idx,
         )
-        precision_antag, precision_syn = prec
-        recall_antag, recall_syn = rec
-        f1_antag, f1_syn = f1s
 
-        order = ["antagonism", "synergy"]
-        order_idx = le.transform(order)
+        precision_antag, precision_neutral, precision_syn = prec
+        recall_antag, recall_neutral, recall_syn = rec
+        f1_antag, f1_neutral, f1_syn = f1s
+
+        # log-friendly lines
+        print(f"precision_antag={precision_antag:.4f}")
+        print(f"recall_antag={recall_antag:.4f}")
+        print(f"f1_antag={f1_antag:.4f}")
+
+        print(f"precision_neutral={precision_neutral:.4f}")
+        print(f"recall_neutral={recall_neutral:.4f}")
+        print(f"f1_neutral={f1_neutral:.4f}")
+
+        print(f"precision_syn={precision_syn:.4f}")
+        print(f"recall_syn={recall_syn:.4f}")
+        print(f"f1_syn={f1_syn:.4f}")
+    
         cm = confusion_matrix(y_te, y_pred, labels=order_idx)
 
         if cm_total is None:
@@ -478,7 +487,7 @@ def main():
     # ==========================
     if len(fold_results) > 0:
         print("\n" + "=" * 72)
-        print(f"=== Summary over {len(fold_results)} outer folds ===")
+        print(f"=== Summary over {len(fold_results)} CV1 outer folds ===")
 
         metric_names = list(fold_results[0].keys())
         summary_rows = []
@@ -504,13 +513,14 @@ def main():
         selected_counts_df.to_csv(selected_counts_path, index=False)
         print("Saved selected feature counts to:", selected_counts_path)
         
+
         # ==========================
         # 8) Confusion matrix plot → SAVE
         # ==========================
         if cm_total is not None:
             cm_mean = cm_total / len(fold_results)
 
-            order = ["antagonism", "synergy"]
+            order = ["antagonism", "neutral", "synergy"]
 
             cm_path = out_dir / f"confusion_matrix_{SCHEME.lower()}_mean.csv"
             cm_df = pd.DataFrame(
@@ -569,325 +579,6 @@ def main():
         print("\nSaved aggregated feature importances to:", fi_path)
 
     print("\n=== EXP07 DONE ===\n")
-
-
-if __name__ == "__main__":
-    main()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    # ==========================
-    # 3) Outer CV split (CV1 / CV2)
-    # ==========================
-    def make_split_cv1(verbose=True):
-        gss = GroupShuffleSplit(n_splits=1, test_size=0.20, random_state=42)
-        tr_idx, te_idx = next(gss.split(X, y_enc, groups=pairs))
-        if verbose:
-            print("=" * 72)
-            print("CV1 split by Drug Pair")
-            print("Train:", len(tr_idx), "Test:", len(te_idx))
-            print("=" * 72)
-        return tr_idx, te_idx
-
-    def make_split_cv2(
-        strain_col="Strain",
-        pair_col="Drug Pair",
-        min_frac=0.16,
-        max_frac=0.20,
-        lambda_penalty=1.0,
-        top_k_print=5,
-        verbose=True
-    ):
-        # exact copy of exp03 logic
-        S_all = df[strain_col].astype(str).values
-        P_all = df[pair_col].astype(str).values
-        strains_uni = sorted(np.unique(S_all).tolist())
-        n_total = len(df)
-        min_target = int(round(min_frac * n_total))
-        max_target = int(round(max_frac * n_total))
-
-        if verbose:
-            print("=" * 72)
-            print("CV2: Strain + Drug Pair split")
-            print(f"Rows: {n_total}  Strains: {len(strains_uni)}")
-
-        def eval_subset(S_test_set):
-            if not S_test_set:
-                return 0, 0, n_total, set(), -np.inf
-            mask_s = np.isin(S_all, list(S_test_set))
-            P_test_set = set(P_all[mask_s])
-            test_mask = mask_s & np.isin(P_all, list(P_test_set))
-            train_mask = (~mask_s) & (~np.isin(P_all, list(P_test_set)))
-            kept = int(test_mask.sum())
-            train = int(train_mask.sum())
-            dropped = n_total - (kept + train)
-            score = kept - lambda_penalty * dropped
-            return kept, train, dropped, P_test_set, score
-
-        candidates = []
-        for r in range(1, len(strains_uni) + 1):
-            for subset in itertools.combinations(strains_uni, r):
-                S_test = set(subset)
-                kept, train, dropped, P_test, score = eval_subset(S_test)
-                if min_target <= kept <= max_target:
-                    candidates.append(dict(
-                        S_test=S_test,
-                        P_test=P_test,
-                        kept=kept,
-                        train=train,
-                        dropped=dropped,
-                        score=score
-                    ))
-
-        if not candidates:
-            print("\nCV2 could not find a valid split.")
-            return np.arange(n_total), np.array([], dtype=int), None
-
-        candidates.sort(key=lambda c: (c["dropped"], -c["kept"], -c["score"]))
-        best = candidates[0]
-
-        S_test_best = best["S_test"]
-        P_test_best = best["P_test"]
-
-        test_mask = np.isin(S_all, list(S_test_best)) & np.isin(P_all, list(P_test_best))
-        train_mask = (~np.isin(S_all, list(S_test_best))) & (~np.isin(P_all, list(P_test_best)))
-
-        te_idx = np.where(test_mask)[0]
-        tr_idx = np.where(train_mask)[0]
-
-        if verbose:
-            print("=" * 72)
-            print("Chosen CV2 split:")
-            print("#Train:", len(tr_idx), "#Test:", len(te_idx))
-            print("=" * 72)
-
-        return tr_idx, te_idx, best
-
-    if SCHEME == "CV1":
-        tr_idx, te_idx = make_split_cv1()
-        info = None
-    else:
-        tr_idx, te_idx, info = make_split_cv2()
-
-    # ==========================
-    # 4) Prepare nested CV folds
-    # ==========================
-    class SilentLogger:
-        def info(self, msg): pass
-        def warning(self, msg): pass
-
-    lgb.register_logger(SilentLogger())
-
-    X_tr = X.iloc[tr_idx].reset_index(drop=True)
-    X_te = X.iloc[te_idx].reset_index(drop=True)
-    y_tr = y_enc[tr_idx]
-    y_te = y_enc[te_idx]
-    grp_tr = pairs[tr_idx]
-
-    # ==========================
-    # 5) Hyperparameter search
-    # ==========================
-    def sample_one_params():
-        max_depth = 3
-        leaves_map = {3: [7, 15]}
-        return dict(
-            boosting_type=rng.choice(["gbdt", "dart"], p=[0.6, 0.4]),
-            learning_rate=float(rng.choice([0.02, 0.03, 0.04, 0.05])),
-            max_depth=max_depth,
-            num_leaves=int(rng.choice(leaves_map[max_depth])),
-            min_data_in_leaf=200,
-            feature_fraction=float(rng.choice([0.30, 0.40])),
-            bagging_fraction=float(rng.choice([0.60, 0.80])),
-            bagging_freq=1,
-            lambda_l2=float(10 ** rng.uniform(1.2, 1.7)),
-            lambda_l1=float(rng.choice([0.0, 0.1, 0.5])),
-            max_bin=int(rng.choice([63, 127])),
-            min_gain_to_split=float(rng.choice([0.05, 0.10, 0.20])),
-        )
-
-    param_samples = [sample_one_params() for _ in range(32)]
-
-    try:
-        inner_cv = StratifiedGroupKFold(n_splits=3, shuffle=True, random_state=111)
-        def inner_splitter():
-            return inner_cv.split(X_tr, y_tr, groups=grp_tr)
-    except Exception:
-        inner_cv = GroupKFold(n_splits=3)
-        def inner_splitter():
-            return inner_cv.split(X_tr, y_tr, groups=grp_tr)
-
-    def cv_acc_for_params(params):
-        scores = []
-        for tr_f, val_f in inner_splitter():
-            Xf_tr, Xf_val = X_tr.iloc[tr_f], X_tr.iloc[val_f]
-            yf_tr, yf_val = y_tr[tr_f], y_tr[val_f]
-
-            m = lgb.LGBMClassifier(
-                objective="multiclass",
-                num_class=3,
-                n_estimators=4000,
-                random_state=777,
-                n_jobs=4,
-                **params,
-            )
-            m.fit(
-                Xf_tr,
-                yf_tr,
-                eval_set=[(Xf_val, yf_val)],
-                eval_metric="multi_logloss",
-                callbacks=[lgb.early_stopping(200, False)],
-            )
-
-            probs = m.predict_proba(Xf_val)
-            y_pred = np.argmax(probs, axis=1)
-            scores.append(f1_score(yf_val, y_pred, average="macro"))
-
-        return float(np.mean(scores))
-    
-
-    print("\n--- Inner CV hyperparameter search ---")
-    scores = [(cv_acc_for_params(ps), ps) for ps in param_samples]
-    scores.sort(reverse=True)
-    best_acc, best_params = scores[0]
-    print("Best inner-CV ACC:", round(best_acc, 3))
-    print("Best params:", best_params)
-
-    # ==========================
-    # 6) Final refit
-    # ==========================
-    m_final = lgb.LGBMClassifier(
-        objective="multiclass",
-        num_class=3,
-        n_estimators=4000,
-        random_state=777,
-        n_jobs=4,
-        **best_params,
-    )
-    m_final.fit(X_tr, y_tr)
-
-    # ==========================
-    # 7) Final evaluation
-    # ==========================
-    probs_te = m_final.predict_proba(X_te)
-    y_pred = np.argmax(probs_te, axis=1)
-
-    # ---- Global metrics (compute once) ----
-    roc_auc_test = roc_auc_score(
-        y_te,
-        probs_te,
-        multi_class="ovr",
-        average="macro",
-        labels=m_final.classes_,
-    )
-    accuracy_test = accuracy_score(y_te, y_pred)
-    f1_weighted_test = f1_score(y_te, y_pred, average="weighted")
-    f1_macro_test = f1_score(y_te, y_pred, average="macro")
-
-    print("\n=== Held-out Test Metrics ===")
-    print(f"Macro ROC-AUC: {roc_auc_test:.3f}")
-    print(f"Acc          : {accuracy_test:.3f}")
-    print(f"F1 (weighted): {f1_weighted_test:.3f}")
-    print(f"F1 (macro)   : {f1_macro_test:.3f}")
-
-    print("\nConfusion matrix:\n", confusion_matrix(y_te, y_pred))
-    print(
-        "\nClassification Report:\n",
-        classification_report(y_te, y_pred, target_names=le.classes_),
-    )
-
-    # ---- Per-class metrics (antagonism, neutral, synergy) ----
-    ant_code = le.transform(["antagonism"])[0]
-    neu_code = le.transform(["neutral"])[0]
-    syn_code = le.transform(["synergy"])[0]
-
-    prec, rec, f1s, _ = precision_recall_fscore_support(
-        y_te,
-        y_pred,
-        labels=[ant_code, neu_code, syn_code],
-    )
-
-    precision_antag, precision_neutral, precision_syn = prec
-    recall_antag, recall_neutral, recall_syn = rec
-    f1_antag, f1_neutral, f1_syn = f1s
-
-    # ---- Log-friendly lines (for grep / parsing) ----
-    print("\n--- Metrics for Log ---")
-    print(f"accuracy_test={accuracy_test:.4f}")
-    print(f"f1_macro_test={f1_macro_test:.4f}")
-    print(f"f1_weighted_test={f1_weighted_test:.4f}")
-    print(f"roc_auc_test={roc_auc_test:.4f}")
-
-    print(f"precision_antag={precision_antag:.4f}")
-    print(f"recall_antag={recall_antag:.4f}")
-    print(f"f1_antag={f1_antag:.4f}")
-
-    print(f"precision_neutral={precision_neutral:.4f}")
-    print(f"recall_neutral={recall_neutral:.4f}")
-    print(f"f1_neutral={f1_neutral:.4f}")
-
-    print(f"precision_syn={precision_syn:.4f}")
-    print(f"recall_syn={recall_syn:.4f}")
-    print(f"f1_syn={f1_syn:.4f}")
-
-
-    # ==========================
-    # 8) Overfitting check
-    # ==========================
-    probs_tr = m_final.predict_proba(X_tr)
-    y_tr_pred = np.argmax(probs_tr, axis=1)
-
-    auc_tr = roc_auc_score(
-        y_tr,
-        probs_tr,
-        multi_class="ovr",
-        average="macro",
-        labels=m_final.classes_,
-    )
-    acc_tr = accuracy_score(y_tr, y_tr_pred)
-    f1_macro_tr = f1_score(y_tr, y_tr_pred, average="macro")
-
-    print("\n=== Overfitting check ===")
-    print(f"Train AUC: {auc_tr:.3f} | Test AUC: {roc_auc_test:.3f}")
-    print(f"Train Acc: {acc_tr:.3f} | Test Acc: {accuracy_test:.3f}")
-    print(f"Train F1 macro: {f1_macro_tr:.3f} | Test F1 macro: {f1_macro_test:.3f}")
-
-
-    # ==========================
-    # 9) Confusion matrix → SAVE
-    # ==========================
-    order = ["antagonism", "neutral", "synergy"]
-    order_idx = le.transform(order)
-    cm = confusion_matrix(y_te, y_pred, labels=order_idx)
-
-    fig, ax = plt.subplots(figsize=(6, 5))
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=order)
-    disp.plot(cmap="Blues", ax=ax)
-
-    plt.title("Confusion Matrix — Multi-class (reduced elementwise)")
-    plt.tight_layout()
-
-    fig_path = out_dir / f"confusion_matrix_{SCHEME.lower()}.png"
-    plt.savefig(fig_path, dpi=150)
-    plt.close()
-
-    print("\nSaved confusion matrix:", fig_path)
-    print("\n=== EXP07 DONE ===")
 
 
 if __name__ == "__main__":

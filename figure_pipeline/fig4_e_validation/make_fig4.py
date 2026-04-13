@@ -24,7 +24,7 @@ from sklearn.metrics import roc_auc_score, average_precision_score
 # ==========================
 from halo.paths import FIGURE_PIPELINE, MODEL_RESULTS
 
-BASE_DIR = MODEL_RESULTS / "e_validation" / "external_eval_chandrasekaran"
+BASE_DIR = MODEL_RESULTS / "external_validation" / "external_eval_chandrasekaran"
 OUT_DIR = FIGURE_PIPELINE / "fig4_e_validation" / "fig4_panels"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 

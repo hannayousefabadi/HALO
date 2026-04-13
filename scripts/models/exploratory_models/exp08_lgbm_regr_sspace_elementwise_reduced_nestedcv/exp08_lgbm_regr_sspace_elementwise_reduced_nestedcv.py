@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 """
-Experiment: exp08_lgbm_regr_sspace_elementwise_reduced_nestedcv (HALO-S-CV1, regression)
+Experiment: exp08_lgbm_regr_sspace_elementwise_reduced_nestedcv
 
 Config
+
+
+
+
+
 - task: regression on Bliss Score (continuous outcome)
 - feature_design: reduced elementwise similarity features (selected in exp05; includes CC + S-space dimensions)
 - use_sspace: true (S-space is already included in the reduced feature table; no feature recomputation here)

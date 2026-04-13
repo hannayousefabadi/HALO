@@ -32,7 +32,7 @@ BEST_PARAMS_PATH = MODEL_RESULTS / "exp06d_lgbm_bin_nosspace_elementwise_reduced
 CC_FEATURES_PATH = CC_FEATURES / "cc_features_concat_25x128.csv"
 COMBOS_PATH = PROCESSED / "halo_training_dataset.csv"
 
-OUT_DIR = MODEL_RESULTS / "e_validation" / "novel_pairs"
+OUT_DIR = MODEL_RESULTS / "external_validation" / "novel_pairs"
 
 
 def _make_pair_id(ik_a, ik_b):

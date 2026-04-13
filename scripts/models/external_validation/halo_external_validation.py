@@ -59,10 +59,10 @@ SCHEME = "CV1"
 corr_min = 0.01
 keep_top_frac = 0.30
 
-# Original HALO result dir (where best_params_cv1.json lives)
+# original HALO result dir (where best_params_cv1.json lives)
 exp06d_out = MODEL_RESULTS / "exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv_bliss005"
 
-ext_out = MODEL_RESULTS / "e_validation" / "external_eval_chandrasekaran"
+ext_out = MODEL_RESULTS / "external_validation" / "external_validation_chandrasekaran"
 ext_out.mkdir(parents=True, exist_ok=True)
 
 best_params_path = exp06d_out / "best_params_cv1.json"
