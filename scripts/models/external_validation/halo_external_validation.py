@@ -20,15 +20,10 @@ Pipeline:
 
 5. External evaluation on Chandrasekaran dataset:
    - Input: chandrasekaran_cleaned_data.csv
-   - Build full CC-only elementwise features via FeatureMapper.elementwise_similarity
+   - Build full CC-only elementwise features 
    - Subset those features to the exact same final selected features
    - Run final model, produce predictions, metrics, ROC/PR curve data
      and confusion matrix for plotting
-
-Expected external base file columns:
-    'Drug A', 'Drug B', 'Drug A Inchikey', 'Drug B Inchikey',
-    'Drug Pair' (optional, will be created if missing),
-    'Experimental Interaction Score', 'Interaction Type'
 """
 
 import json
@@ -59,9 +54,7 @@ SCHEME = "CV1"
 corr_min = 0.01
 keep_top_frac = 0.30
 
-# original HALO result dir (where best_params_cv1.json lives)
 exp06d_out = MODEL_RESULTS / "exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv_bliss005"
-
 ext_out = MODEL_RESULTS / "external_validation" / "external_validation_chandrasekaran"
 ext_out.mkdir(parents=True, exist_ok=True)
 
@@ -144,7 +137,7 @@ combos_df = pd.read_csv(combos_path).copy()
 fm = FeatureMapper()
 df = fm.elementwise_similarity(combos_df, cc_df)
 
-print("Loaded full internal training df shape:", df.shape)
+print("Full df shape:", df.shape)
 
 df["Interaction Type"] = df["Bliss Score"].apply(
     lambda x: classify_interaction(x, additivity_cutoff=0.05)
@@ -177,10 +170,10 @@ le = LabelEncoder()
 y_enc = le.fit_transform(y_text)
 
 pairs = df["Drug Pair"].astype(str).values
-n = len(df)
+# n = len(df)
 
-print(f"\nTotal samples: {n}")
-print(f"Full feature columns (CC-only): {len(feat_cols)}")
+# print(f"\nTotal samples: {n}")
+# print(f"Full feature columns (CC-only): {len(feat_cols)}")
 
 inv_label_map = {
     int(code): cls for cls, code in zip(le.classes_, le.transform(le.classes_))
@@ -491,7 +484,6 @@ print(
     "\nReport:\n",
     classification_report(y_ext, y_pred_ext, target_names=le.classes_),
 )
-
 
 # ==========================
 # 8) Save everything needed for plotting

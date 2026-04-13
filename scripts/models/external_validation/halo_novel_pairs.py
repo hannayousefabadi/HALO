@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Experiment: exp06_novel_pairs
+predicting novel pairs using HALO model
 
 - Trains the final HALO model (exp06d config) on the full labeled dataset.
 - Performs feature selection once on the full labeled training set only.
