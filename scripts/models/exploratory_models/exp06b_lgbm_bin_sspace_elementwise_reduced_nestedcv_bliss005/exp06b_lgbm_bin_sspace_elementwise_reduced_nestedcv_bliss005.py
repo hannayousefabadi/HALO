@@ -2,32 +2,32 @@
 """
 Experiment: exp06b_lgbm_bin_sspace_elementwise_reduced_nestedcv_bliss005
 
-- task: binary classification (synergy vs antagonism) using a Bliss additivity cutoff of ±0.05
-- feature_design: full elementwise similarity features (CC + S-space base features)
-- use_sspace: true
-- outer_cv: CV1-style evaluation (drug-pair held-out)
-    - 5 outer folds generated with StratifiedGroupKFold grouped by Drug Pair
-      (falls back to GroupKFold if StratifiedGroupKFold shuffle/seed is unavailable)
-- inner_cv: nested hyperparameter search inside each outer fold
-    - 3-fold StratifiedGroupKFold (group = Drug Pair; fallback to GroupKFold)
-    - feature selection is performed INSIDE each inner-training fold only
-    - 32 LightGBM configurations sampled from a predefined search space
-    - best configuration selected by mean inner-CV accuracy
-- final outer-fold fit:
-    - rerun feature selection on the full outer-train only
-    - refit final model on full outer-train using best params
-    - evaluate once on untouched outer-test
+Config
+- model: LightGBM 
+- task: binary classification
+- feature_design: elementwise similarity 
+- sspace: enabled (strain-space features)
+- feature_selection: enabled (within CV folds) 
+- bliss neutrality cutoff: ±0.05
 
-Outputs (MODEL_RESULTS/exp06b_lgbm_bin_sspace_elementwise_reduced_nestedcv_bliss005):
-- cv_metrics_summary_cv1.csv
-- confusion_matrix_cv1_mean.csv/.png
-- feature_importances_cv1.csv
-- selected_features_outerfold{i}.csv
-- selected_feature_counts_per_fold.csv
+- CV:
+  - nested_cv: enabled
+  - Outer split:
+    - CV1 scheme: drug pair held-out
+  - Inner split:
+    - StratifiedGroupKFold, groups = Drug Pair
+    - random search over 32 sampled hyperparameter configs
+    - selection metric: mean validation accuracy across inner folds
+  - Final fit: refit best model on full outer-train, evaluate once on outer-test
 
-Data integrity note:
-All preprocessing (NA handling, dtype enforcement, column validation, etc.) is assumed completed upstream.
-This script rebuilds the full elementwise feature table and performs all feature selection strictly within CV.
+Data integrity note
+All preprocessing (missing values, dtypes, column validation, and label construction from Bliss using the
+±0.1 cutoff) is performed upstream in preprocessing notebooks/scripts. This script assumes the processed
+inputs are clean and consistent and that `Interaction Type` already reflects that cutoff.
+
+Class encoding
+The binary target is encoded as {0,1} where 1 corresponds to synergy and is treated as the
+positive class for F1 and ROC-AUC.
 """
 
 import numpy as np
@@ -137,10 +137,9 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(
-        "\n=== EXP06b: LGBM bin + full elementwise features + nested CV "
-        "with fold-internal feature selection ===\n"
+        "\n=== EXP06b ===\n"
     )
-    print("Using scheme:", SCHEME)
+    # print("Using scheme:", SCHEME)
     print("Output dir :", out_dir)
 
     rng = np.random.default_rng(42)
@@ -155,7 +154,7 @@ def main():
     features_cc_s = cc_df.merge(ss_df, on="inchikey", how="inner", suffixes=("", "_s"))
     df = FeatureMapper().elementwise_similarity(combinations_df, features_cc_s)
 
-    print("Full elementwise df shape:", df.shape)
+    print("Full df shape:", df.shape)
 
     # Binary relabel with ±0.05 cutoff
     df["Interaction Type"] = df["Bliss Score"].apply(
@@ -200,8 +199,12 @@ def main():
     # ==========================
     def make_splits_cv1(n_splits=5, verbose=True):
         """
-        5-fold outer CV over Drug Pair groups (CV1).
-        Uses StratifiedGroupKFold if available, falls back to GroupKFold.
+        Split data into outer test and outer train under Drug Pair held-out scheme (CV1)
+        over 5 folds.
+        
+        Returns:
+            tr_idx (np.ndarray of positions),
+            te_idx (np.ndarray of positions)
         """
         try:
             outer_cv = StratifiedGroupKFold(
@@ -217,15 +220,15 @@ def main():
         splits = []
         for fold_idx, (tr_idx, te_idx) in enumerate(split_gen, 1):
             splits.append((tr_idx, te_idx))
-            if verbose:
-                print("=" * 72)
-                print(f"CV1 outer fold {fold_idx}/{n_splits} (Drug Pair grouping):")
-                print(f"Train size: {len(tr_idx)}")
-                print(f"Train size fraction: {len(tr_idx) / len(df) * 100:.2f}%")
-                print(f"Test size: {len(te_idx)}")
-                print(f"Test size fraction: {len(te_idx) / len(df) * 100:.2f}%")
-                print(f"Test + Train set: {len(tr_idx) + len(te_idx)}")
-                print("-" * 72)
+            # if verbose:
+            #     print("=" * 72)
+            #     print(f"CV1 outer fold {fold_idx}/{n_splits} (Drug Pair grouping):")
+            #     print(f"Train size: {len(tr_idx)}")
+            #     print(f"Train size fraction: {len(tr_idx) / len(df) * 100:.2f}%")
+            #     print(f"Test size: {len(te_idx)}")
+            #     print(f"Test size fraction: {len(te_idx) / len(df) * 100:.2f}%")
+            #     print(f"Test + Train set: {len(tr_idx) + len(te_idx)}")
+            #     print("-" * 72)
         return splits
 
     if SCHEME == "CV1":
@@ -274,7 +277,7 @@ def main():
         print(f"Outer-train shape: {X_tr.shape}")
         print(f"Outer-test shape : {X_te.shape}")
 
-        # ---- Inner CV splitter ----
+        # The inner CV split, 3 folds, grouped by drug-pair
         try:
             inner_cv = StratifiedGroupKFold(
                 n_splits=3,
@@ -291,7 +294,7 @@ def main():
             def inner_splitter():
                 return inner_cv.split(X_tr, y_tr, groups=grp_tr)
 
-        # ---- Hyperparameter sampling ----
+        # Hyperparameter sampling
         def sample_one_params():
             max_depth = 3
             leaves_map = {3: [7, 9, 15]}
@@ -313,8 +316,24 @@ def main():
 
         param_samples = [sample_one_params() for _ in range(32)]
 
-        # ---- Nested inner-CV scoring with INNER-TRAIN-ONLY feature selection ----
+        # inner-CV hyperparameters scores and feature selection on INNER-TRAIN-ONLY
         def cv_acc_for_params(params):
+            """
+            Perform a full inner cross‑validation loop for a given hyperparameter
+            configuration.
+
+            For each inner fold:
+            - Fit the feature selector only on the inner‑train split.
+            - Select features for that fold.
+            - Train a LightGBM model with the provided hyperparameters.
+            - Evaluate accuracy on the inner‑validation split.
+
+            Returns the mean validation accuracy across inner folds, used for
+            comparing and ranking hyperparameter configurations in the nested CV.
+
+            It is trying to answer: “If we used this hyperparameter configuration, 
+            how well would the pipeline generalize?”
+            """    
             accs = []
 
             for inner_fold_idx, (tr_f, val_f) in enumerate(inner_splitter(), 1):
@@ -372,7 +391,7 @@ def main():
             f"Best params: {best_params}"
         )
 
-        # ---- Feature selection on FULL outer-train only ----
+        # feature selection on FULL outer-train only
         selected_outer = select_features_lgbm(
             X_train=X_tr,
             y_train=y_tr,
@@ -399,7 +418,7 @@ def main():
         X_tr_sel = X_tr[selected_outer]
         X_te_sel = X_te[selected_outer]
 
-        # ---- Final refit on full outer-train ----
+        # final refit on full outer-train 
         m_final = lgb.LGBMClassifier(
             objective="binary",
             n_estimators=4000,
@@ -409,13 +428,13 @@ def main():
         )
         m_final.fit(X_tr_sel, y_tr)
 
-        # ---- Store feature importance for this outer fold ----
+        # store feature importance for this outer fold 
         fi_gain_fold = m_final.booster_.feature_importance(importance_type="gain")
         fi_per_fold.append(dict(zip(selected_outer, fi_gain_fold)))
 
         pos_idx = np.flatnonzero(m_final.classes_ == synergy_code)[0]
 
-        # ---- Final evaluation on untouched outer-test ----
+        # final evaluation on untouched outer-test
         p_te = m_final.predict_proba(X_te_sel)[:, pos_idx]
         y_pred = (p_te >= 0.5).astype(int)
 
@@ -486,13 +505,15 @@ def main():
         print("\nSaved CV metrics summary to:", summary_path)
         print("=" * 72)
 
-        # Save selected feature counts per fold
+        # save selected feature counts per fold
         selected_counts_df = pd.DataFrame(selected_counts)
         selected_counts_path = out_dir / "selected_feature_counts_per_fold.csv"
         selected_counts_df.to_csv(selected_counts_path, index=False)
         print("Saved selected feature counts to:", selected_counts_path)
-
-        # Save averaged confusion matrix
+        
+        # ==========================
+        # 8) Confusion matrix plot → SAVE
+        # ==========================
         if cm_total is not None:
             cm_mean = cm_total / len(fold_results)
 

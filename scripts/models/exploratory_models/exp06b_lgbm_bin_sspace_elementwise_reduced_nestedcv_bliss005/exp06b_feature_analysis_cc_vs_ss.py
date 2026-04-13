@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Script: exp06b_cc_vs_ss_analysis.py (M2 feature-group analysis)
+Script: exp06b_feature_analysis_cc_vs_ss.py (M2 feature-group analysis)
 
 Post-hoc feature-group importance analysis for exp06b.
 
@@ -13,12 +13,6 @@ Purpose
   using feature_metadata_cc_s_full.csv to infer the CC dimensionality boundary.
 - Quantify the contribution of CC vs SS to total (normalized) gain.
 - Count how many CC/SS features appear among the top-k ranked features.
-
-Inputs
-- MODEL_RESULTS/exp06b_lgbm_bin_sspace_elementwise_reduced_nestedcv_bliss005/
-    - feature_importances_cv1.csv
-- FEATURES/
-    - feature_metadata_cc_s_full.csv
 
 Grouping logic
 - Elementwise feature names are expected to follow: {cos|euc}_elem_{idx}.
@@ -40,7 +34,6 @@ Data integrity note
 """
 
 import pandas as pd
-
 from pathlib import Path
 from halo.paths import FEATURES, MODEL_RESULTS
 
@@ -62,7 +55,7 @@ def load_importances(fi_path: Path) -> pd.DataFrame:
 
     df = pd.read_csv(fi_path)
 
-    # Enforce: exp06b always outputs importance_gain_mean
+    # enforce: exp06b always outputs importance_gain_mean
     if "importance_gain_mean" not in df.columns:
         raise ValueError(
             "Expected column 'importance_gain_mean' in feature importance file. "
@@ -71,14 +64,14 @@ def load_importances(fi_path: Path) -> pd.DataFrame:
 
     gain_col = "importance_gain_mean"
 
-    # Create normalized gain
+    # create normalized gain
     if "importance_gain_norm" not in df.columns:
         total_gain = df[gain_col].sum()
         if total_gain <= 0:
             raise ValueError("Total importance_gain_mean is non-positive; cannot normalize.")
         df["importance_gain_norm"] = df[gain_col] / total_gain
 
-    # Sort by importance_gain_mean
+    # sort by importance_gain_mean
     df = df.sort_values(gain_col, ascending=False).reset_index(drop=True)
     return df
 
@@ -87,12 +80,11 @@ def load_feature_meta(meta_path: Path) -> tuple[pd.DataFrame, int]:
     """
     Load CC+SS metadata and infer the number of CC dimensions.
 
-    Returns
-    -------
-    meta : DataFrame indexed by original_name
-    n_cc_dims : int
-        Number of CC base dimensions (dim_0 .. dim_{n_cc_dims-1}).
-        Used to partition elementwise indices into CC vs SS.
+    Returns    
+        meta: DataFrame indexed by original_name
+        n_cc_dims: int
+            Number of CC base dimensions (dim_0 .. dim_{n_cc_dims-1}).
+            Used to partition elementwise indices into CC vs SS.
     """
     if not meta_path.exists():
         raise FileNotFoundError(meta_path)
@@ -110,7 +102,6 @@ def load_feature_meta(meta_path: Path) -> tuple[pd.DataFrame, int]:
 
     n_cc_dims = int(cc_dims.max()) + 1
     return meta, n_cc_dims
-
 
 # ==========================
 # 2) CC vs SS grouping logic

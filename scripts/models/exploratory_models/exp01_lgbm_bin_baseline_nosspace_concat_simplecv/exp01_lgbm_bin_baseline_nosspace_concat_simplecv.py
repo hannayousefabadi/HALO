@@ -3,15 +3,17 @@
 Experiment: exp01_lgbm_bin_baseline_nosspace_concat_simplecv
 
 Config
-- model: LightGBM (LGBMClassifier)
-- task: binary classification (synergy vs antagonism)
+- model: LightGBM
+- task: binary classification
 - feature_design: concatenation (drugA + drugB CC features)
 - sspace: disabled
+- feature selection: disabled
+- bliss neutrality cutoff ±0.1 (applied during preprocessing; this script assumes labels are already finalized)
+
 - CV:
   - nested_cv: disabled
   - evaluation split: single stratified train/test split
   - hyperparameter search: RandomizedSearchCV with StratifiedKFold (5-fold) on train only
-- label rule: bliss neutrality cutoff ±0.1 (applied during preprocessing; this script assumes labels are already finalized)
 
 Data integrity note
 All preprocessing (missing values, dtypes, column validation, label construction, and filtering)
@@ -54,15 +56,14 @@ def main():
     mapper = FeatureMapper()
     df = mapper.concatenation(combinations_df, cc_df)
 
-    print("Feature frame:", df.shape)
-    print(df.head())
+    print("Full df shape:", df.shape)
 
     # ==========================
     # 3) Encoding 
     # ==========================
     X, y_encoded, class_names = features_and_target(
         df,
-        task='bin_clas',
+        task='bin_clas',    # binary task: keep only synergy / antagonism
         strain_as_feature=False,
         top_n_strains=None
     )
@@ -74,7 +75,7 @@ def main():
     # pos = Counter(y_train)[1]
     # neg = Counter(y_train)[0]
 
-    print("Class names:", class_names)
+    # print("Class names:", class_names)
     # print(f"Train positives={pos}, negatives={neg}")
 
     """
@@ -127,11 +128,11 @@ def main():
         random_state=42
     )
 
-    print("\n--- Running RandomizedSearchCV ---\n")
+    # print("\n--- Running RandomizedSearchCV ---\n")
     search.fit(X_train, y_train)
 
     best_model = search.best_estimator_
-    print("\nBest params:", search.best_params_)
+    # print("\nBest params:", search.best_params_)
 
     # ==========================
     # 6) Evaluate 

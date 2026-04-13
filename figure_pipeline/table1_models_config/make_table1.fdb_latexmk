@@ -1,7 +1,7 @@
 # Fdb version 3
-["pdflatex"] 1775906468 "/home/hany/projects/halo/HALO_repo/figure_pipeline/table1_models_config/make_table1.tex" "make_table1.pdf" "make_table1" 1775906468
+["pdflatex"] 1776072755 "/home/hany/projects/halo/HALO_repo/figure_pipeline/table1_models_config/make_table1.tex" "make_table1.pdf" "make_table1" 1776072755
   "/etc/texmf/web2c/texmf.cnf" 1765287839 475 c0e671620eb5563b2130f56340a5fde8 ""
-  "/home/hany/projects/halo/HALO_repo/figure_pipeline/table1_models_config/make_table1.tex" 1775906468 2241 987f139f3502adf0259f52692e96e5cc ""
+  "/home/hany/projects/halo/HALO_repo/figure_pipeline/table1_models_config/make_table1.tex" 1776072754 2270 c884c3cff2746df8f1c00eae407ab2fc ""
   "/usr/share/texlive/texmf-dist/fonts/enc/dvips/base/8r.enc" 1165713224 4850 80dc9bab7f31fb78a000ccfed0e27cab ""
   "/usr/share/texlive/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
   "/usr/share/texlive/texmf-dist/fonts/tfm/adobe/helvetic/phvb7t.tfm" 1136768653 2240 eb56c13537f4d8a0bd3fafc25572b1bd ""
@@ -29,9 +29,9 @@
   "/usr/share/texmf/web2c/texmf.cnf" 1581979058 38841 ce3692aa899bb693b90b87eaa5d4d84e ""
   "/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map" 1765478298 4770781 1ed1abab22da9c3e2cc82e4db562318b ""
   "/var/lib/texmf/web2c/pdftex/pdflatex.fmt" 1765478323 8264240 34d85b682c5f85ef36abaac2ac9b26bc ""
-  "make_table1.aux" 1775906468 8 a94a2480d3289e625eea47cd1b285758 "pdflatex"
-  "make_table1.tex" 1775906468 2241 987f139f3502adf0259f52692e96e5cc ""
+  "make_table1.aux" 1776072755 8 a94a2480d3289e625eea47cd1b285758 "pdflatex"
+  "make_table1.tex" 1776072754 2270 c884c3cff2746df8f1c00eae407ab2fc ""
   (generated)
+  "make_table1.pdf"
   "make_table1.log"
   "make_table1.aux"
-  "make_table1.pdf"

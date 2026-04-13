@@ -3,23 +3,22 @@
 Experiment: exp02_lgbm_bin_sspace_concat_nestedcv
 
 Config
-- model: LightGBM (LGBMClassifier)
-- task: binary classification (synergy vs antagonism)
-- feature_design: concatenation (DrugA + DrugB feature vectors)
-- sspace: enabled (strain-space features merged onto CC features per drug via `inchikey`)
-- nested_cv: enabled
-- cv_scheme: CV1 (outer split held out by Drug Pair; optional CV2 supported by `SCHEME`)
-- bliss neutrality cutoff: ±0.1 (labels are assumed to be created upstream using this cutoff)
+- model: LightGBM 
+- task: binary classification
+- feature_design: concatenation (DrugA + DrugB CC features)
+- sspace: enabled (strain-space features)
+- feature_selection: disabled
+- bliss neutrality cutoff: ±0.1 (applied during preprocessing; this script assumes labels are already finalized)
 
-Nested CV procedure
-- Outer split:
-  - CV1: GroupShuffleSplit with groups = Drug Pair (80% train / 20% test)
-  - CV2 (optional): disjoint holdout by Strain + Drug Pair with cross-edge drops
-- Inner tuning (on outer-train only):
-  - StratifiedGroupKFold (fallback GroupKFold), groups = Drug Pair
-  - random search over 32 sampled hyperparameter configs
-  - selection metric: mean validation accuracy across inner folds
-- Final fit: refit best model on full outer-train, evaluate once on outer-test
+- CV:
+  - nested_cv: enabled
+  - Outer split:
+    - CV1 scheme: drug pair held-out
+  - Inner split:
+    - StratifiedGroupKFold, groups = Drug Pair
+    - random search over 32 sampled hyperparameter configs
+    - selection metric: mean validation accuracy across inner folds
+  - Final fit: refit best model on full outer-train, evaluate once on outer-test
 
 Data integrity note
 All preprocessing (missing values, dtypes, column validation, and label construction from Bliss using the
@@ -27,11 +26,9 @@ All preprocessing (missing values, dtypes, column validation, and label construc
 inputs are clean and consistent and that `Interaction Type` already reflects that cutoff.
 
 Class encoding
-Labels are encoded with LabelEncoder on {antagonism, synergy}, yielding antagonism=0 and synergy=1
-(alphabetical). Evaluation treats synergy as the positive class for ROC-AUC by explicitly selecting the
-synergy probability column and binarizing y_test accordingly.
+The binary target is encoded as {0,1} where 1 corresponds to synergy and is treated as the
+positive class for F1 and ROC-AUC.
 """
-
 
 import itertools
 import numpy as np
@@ -71,13 +68,11 @@ def main():
     ss_path = SS_FEATURES / "sspace.csv"
     combos_path = PROCESSED / "halo_training_dataset.csv"
 
-    # where to store plots / outputs
     out_dir = MODEL_RESULTS / "exp02_lgbm_bin_sspace_concat_nestedcv"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print("\n=== EXP02 ===\n")
-    print("Using scheme:", SCHEME)
-    print("Output dir:", out_dir)
+    print("Output dir :", out_dir)
 
     # ==========================
     # 1) load data
@@ -97,7 +92,6 @@ def main():
 
     df = FeatureMapper().concatenation(combinations_df, features_cc_s)
     print("Full df shape:", df.shape)
-    print(df["Interaction Type"].value_counts())
 
     # binary task: keep only synergy / antagonism
     df = df[df["Interaction Type"].isin(["synergy", "antagonism"])].copy()
@@ -136,31 +130,29 @@ def main():
     # ==========================
     # 3) Outer CV (CV1 / CV2)
     # ==========================
-    # CV1 -> held-out by `Drug Pair`
     def make_split_cv1(verbose=True):
         """
-        This function will split data into outer test and outer train under
-        Drug Pair held-out scheme. 
+        Split data into outer test and outer train under Drug Pair held-out scheme (CV1). 
         
         Returns:
             tr_idx (np.ndarray of positions),
             te_idx (np.ndarray of positions)
         """
-        gss = GroupShuffleSplit(n_splits=1, test_size=0.20, random_state=42)
+        gss = GroupShuffleSplit(n_splits=5, test_size=0.20, random_state=42)
         tr_idx, te_idx = next(gss.split(X, y_enc, groups=pairs))
 
-        if verbose:
-            print("=" * 72)
-            print("CV1: Drug Pair grouping:")
-            print(f"Train size: {len(tr_idx)}")
-            print(f"Train size fraction: {round((len(tr_idx) / len(df)), 2) * 100}")
-            print(f"Test size: {len(te_idx)}")
-            print(f"Test size fraction: {round((len(te_idx) / len(df)), 2) * 100}")
-            print(f"Test + Train set: {len(tr_idx) + len(te_idx)}")
-            print("-" * 72)
+        # if verbose:
+        #     print("=" * 72)
+        #     print("CV1: Drug Pair grouping:")
+        #     print(f"Train size: {len(tr_idx)}")
+        #     print(f"Train size fraction: {round((len(tr_idx) / len(df)), 2) * 100}")
+        #     print(f"Test size: {len(te_idx)}")
+        #     print(f"Test size fraction: {round((len(te_idx) / len(df)), 2) * 100}")
+        #     print(f"Test + Train set: {len(tr_idx) + len(te_idx)}")
+        #     print("-" * 72)
         return tr_idx, te_idx
 
-    # CV2 -> held-out by `Drug Pair` and `Strain`
+
     def make_split_cv2(
         strain_col: str = "Strain",
         pair_col: str = "Drug Pair",
@@ -171,10 +163,9 @@ def main():
         verbose: bool = True,
     ):
         """
-        This function will split data into outer test and outer train under 
-        Drug Pair + Strain held-out scheme. It treat each drug pair and each 
-        strain as a node, rows are edges and the number of rows between each drug pair - strain 
-        is the weight of that edge.
+        Split data into outer test and outer train under Drug Pair + Strain held-out scheme. 
+        It treat each drug pair and each strain as a node, rows are edges and the number of 
+        rows between each drug pair - strain is the weight of that edge.
         1) it will exhaustively check every possible subset of strains -> `s_test`
         2) all pairs that appear with those strains -> `p_test`
             - Keep TEST rows where (strain ∈ S_test) AND (pair ∈ P_test).
@@ -192,7 +183,6 @@ def main():
             info   (dict: chosen sets, counts, top candidates)
 
         """
-
         S_all = df[strain_col].astype(str).values
         P_all = df[pair_col].astype(str).values
         strains_uni = sorted(np.unique(S_all).tolist())
@@ -400,6 +390,7 @@ def main():
 
     param_samples = [sample_one_params() for _ in range(32)]
 
+    # The inner CV split, 3 folds, grouped by drug-pair
     try:
         inner_cv = StratifiedGroupKFold(
             n_splits=3, shuffle=True, random_state=111
@@ -415,6 +406,11 @@ def main():
             return inner_cv.split(X_tr, y_tr, groups=grp_tr)
 
     def cv_acc_for_params(params):
+        """
+        For each hyperparameter set, this function loop over each of inner folds (3 folds),
+        train on inner-train, validate on inner-val, compute accuracy, average accuracy
+        across 3 folds as the score for that hyperparameter set.
+        """
         accs = []
         for tr_f, val_f in inner_splitter():
             Xf_tr, Xf_val = X_tr.iloc[tr_f], X_tr.iloc[val_f]
@@ -472,7 +468,7 @@ def main():
     # make sure "synergy" is the positive class for AUC
     y_te_bin = (y_te == synergy_code).astype(int)
 
-    # ---- Global metrics (compute once) ----
+    # global metrics (compute once)
     accuracy_test = accuracy_score(y_te, y_pred)
     f1_macro_test = f1_score(y_te, y_pred, average="macro")
     f1_weighted_test = f1_score(y_te, y_pred, average="weighted")
@@ -488,7 +484,7 @@ def main():
         classification_report(y_te, y_pred, target_names=le.classes_),
     )
 
-    # ---- per-class metrics (antagonism, synergy) ----
+    # per-class metrics
     ant_code = le.transform(["antagonism"])[0]
     syn_code = le.transform(["synergy"])[0]
 
@@ -502,13 +498,7 @@ def main():
     recall_antag, recall_syn = rec
     f1_antag, f1_syn = f1s
 
-    # ---- log-friendly lines (for grep / parsing) ----
-    print("\n--- Metrics for Log ---")
-    print(f"accuracy_test={accuracy_test:.4f}")
-    print(f"f1_macro_test={f1_macro_test:.4f}")
-    print(f"f1_weighted_test={f1_weighted_test:.4f}")
-    print(f"roc_auc_test={roc_auc_test:.4f}")
-
+    # log-friendly lines
     print(f"precision_antag={precision_antag:.4f}")
     print(f"recall_antag={recall_antag:.4f}")
     print(f"f1_antag={f1_antag:.4f}")

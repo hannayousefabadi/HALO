@@ -19,7 +19,7 @@
         \multicolumn{1}{c}{}                       &
         \multicolumn{2}{c}{\textbf{Configuration}} &
         \multicolumn{1}{c}{\textbf{Evaluation}}    &
-        \multicolumn{3}{c}{\textbf{Performance}}                                                                                                \\
+        \multicolumn{3}{c}{\textbf{Performance}}                                                                                                     \\
         \cmidrule(lr){2-3}
         \cmidrule(lr){4-4}
         \cmidrule(lr){5-7}
@@ -32,13 +32,13 @@
                                                    & Evaluation scheme
                                                    & Accuracy
                                                    & ROC-AUC
-                                                   & F1-weighted                                                                                \\
+                                                   & F1-weighted                                                                                     \\
         \midrule
-        M1                                         & Yes               & Nested (within folds) & pair + strain held‑out    & 0.50 & 0.52 & 0.48 \\
-        M2                                         & Yes               & Nested (within folds) & pair‑held‑out             & 0.68 & 0.74 & 0.68 \\
-        HALO                                       & No                & Nested (within folds) & pair‑held‑out             & 0.68 & 0.74 & 0.68 \\
-        M3                                         & No                & Global (pre-CV)       & pair‑held‑out             & 0.75 & 0.82 & 0.75 \\
-        M4                                         & No                & Training-set only     & Standard stratified split & 0.76 & 0.84 & 0.76 \\
+        M1                                         & Yes               & Nested (within CV folds) & Drug pair + strain held‑out & 0.50 & 0.52 & 0.48 \\
+        M2                                         & Yes               & Nested (within CV folds) & Drug pair held‑out          & 0.68 & 0.74 & 0.68 \\
+        HALO                                       & No                & Nested (within CV folds) & Drug pair held‑out          & 0.68 & 0.74 & 0.68 \\
+        M3                                         & No                & Global (pre-CV)          & Drug pair held‑out          & 0.75 & 0.82 & 0.75 \\
+        M4                                         & No                & Training-set only        & Standard stratified split   & 0.76 & 0.84 & 0.76 \\
         \bottomrule
     \end{tabular}
 \end{table}
