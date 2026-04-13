@@ -3,81 +3,152 @@
 Experiment: exp08_lgbm_regr_sspace_elementwise_reduced_nestedcv
 
 Config
+- model: LightGBM 
+- task: regression
+- feature_design: elementwise similarity 
+- sspace: enabled (strain-space features)
+- feature_selection: enabled (within CV folds)
+- bliss neutrality cutoff: ±0.1 (applied during preprocessing; this script assumes labels are already finalized)
 
+- CV:
+  - nested_cv: enabled
+  - Outer split:
+    - CV1 scheme: drug pair held-out
+  - Inner split:
+    - GroupKFold, groups = Drug Pair
+    - random search over 32 sampled hyperparameter configs
+    - selection metric: mean validation RMSE
+  - Final fit: refit best model on full outer-train, evaluate once on outer-test
 
-
-
-
-- task: regression on Bliss Score (continuous outcome)
-- feature_design: reduced elementwise similarity features (selected in exp05; includes CC + S-space dimensions)
-- use_sspace: true (S-space is already included in the reduced feature table; no feature recomputation here)
-- cv_scheme: CV1 by default (drug-pair held-out via GroupShuffleSplit, 80/20); optional CV2 (strain + pair disjoint)
-- nested_cv: true
-    - inner_cv: 3-fold grouped CV by Drug Pair (GroupKFold) for hyperparameter search
-    - model selection: 32 sampled LightGBM configurations ranked by mean inner-CV RMSE (lower is better)
-- model: LightGBM regressor (objective="regression") with early stopping on RMSE
-- evaluation: held-out outer test set; reports RMSE, MAE, R², Spearman ρ, and Pearson r
-- outputs: saved predicted-vs-true scatter plot (pred_vs_true_{scheme}.png) plus console-logged metrics
-
-**Data integrity note:**
-All preprocessing (NA handling, dtype enforcement, column validation, etc.)
-was completed in the preprocessing scripts.
-This notebook assumes clean, validated input data.
+Data integrity note
+All preprocessing (missing values, dtypes, column validation, etc.) is performed upstream in preprocessing 
+notebooks/scripts. This script assumes the processed inputs are clean and consistent.
 """
 
-import itertools
+
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
 import matplotlib
-matplotlib.use("Agg") 
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from sklearn.model_selection import GroupShuffleSplit, GroupKFold
+from sklearn.model_selection import GroupKFold
 from sklearn.metrics import (
-    mean_squared_error,
-    mean_absolute_error,
-    r2_score,
+    root_mean_squared_error,
+    mean_absolute_error, 
+    r2_score
 )
-from scipy.stats import spearmanr, pearsonr
-from halo.paths import MODEL_RESULTS
+
+from halo.paths import CC_FEATURES, SS_FEATURES, PROCESSED, MODEL_RESULTS
+from halo.mappers.feature_mapper import FeatureMapper
+
+
+def select_features_lgbm(
+    X_train: pd.DataFrame,
+    y_train: np.ndarray,
+    feat_cols: list[str],
+    corr_min: float = 0.01,
+    keep_top_frac: float = 0.30,
+) -> list[str]:
+    """
+    Feature selection performed using TRAINING DATA ONLY.
+
+    Steps
+    1) drop zero-variance features
+    2) keep features with |corr(feature, y)| >= corr_min
+       fallback: keep all variance-filtered features if none pass
+    3) rank by LightGBM feature_importances_ and keep top fraction
+    """
+    # Step 1: variance filter
+    var_series = X_train.var()
+    kept_after_var = [c for c in feat_cols if var_series[c] > 0.0]
+
+    if len(kept_after_var) == 0:
+        raise ValueError("No features remained after variance filtering.")
+
+    # Step 2: correlation prefilter
+    kept_after_corr = []
+    y_train_s = pd.Series(y_train, index=X_train.index)
+
+    for col in kept_after_var:
+        corr = X_train[col].corr(y_train_s)
+        if corr is not None and np.isfinite(corr) and abs(corr) >= corr_min:
+            kept_after_corr.append(col)
+
+    if not kept_after_corr:
+        kept_after_corr = kept_after_var.copy()
+
+    # Step 3: model-based importance ranking
+    fs_model = lgb.LGBMRegressor(
+        objective="regression",
+        n_estimators=2000,
+        random_state=777,
+        n_jobs=1,
+        learning_rate=0.03,
+        max_depth=3,
+        num_leaves=15,
+        min_data_in_leaf=200,
+        feature_fraction=0.4,
+        bagging_fraction=0.8,
+        bagging_freq=1,
+        lambda_l2=50.0,
+        lambda_l1=0.0,
+        max_bin=127,
+        min_gain_to_split=0.05,
+    )
+
+    fs_model.fit(X_train[kept_after_corr], y_train)
+
+    feat_imp = pd.Series(
+        fs_model.feature_importances_,
+        index=kept_after_corr,
+    ).sort_values(ascending=False)
+
+    n_keep = max(1, int(len(feat_imp) * keep_top_frac))
+    selected_features = feat_imp.index[:n_keep].tolist()
+
+    return selected_features
 
 
 def main():
     # ==========================
     # 0) Basic config
     # ==========================
-    SCHEME = "CV1"  # or "CV2"
+    SCHEME = "CV1"
 
-    # Path to reduced elementwise dataset from exp05
-    filtered_path = MODEL_RESULTS / "exp05_lgbm_bin_sspace_elementwise_featselect" / "elementwise_features_filtered_cv1_full.csv"
+    corr_min = 0.01
+    keep_top_frac = 0.30
+
+    cc_path = CC_FEATURES / "cc_features_concat_25x128.csv"
+    ss_path = SS_FEATURES / "sspace.csv"
+    combos_path = PROCESSED / "halo_training_dataset.csv"
 
     out_dir = MODEL_RESULTS / "exp08_lgbm_regr_sspace_elementwise_reduced_nestedcv"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    print("\n=== EXP08: LGBM regression + reduced elementwise (from exp05) + nested CV ===\n")
-    print("Using scheme:", SCHEME)
-    print("Input  file:", filtered_path)
+    print(
+        "\n=== EXP08 ===\n"
+    )
+    # print("Using scheme:", SCHEME)
     print("Output dir :", out_dir)
 
     rng = np.random.default_rng(42)
 
     # ==========================
-    # 1) Load reduced dataset
+    # 1) Load and build FULL elementwise feature table
     # ==========================
-    if not filtered_path.exists():
-        raise FileNotFoundError(f"Filtered CSV not found at: {filtered_path}")
+    cc_df = pd.read_csv(cc_path).copy()
+    ss_df = pd.read_csv(ss_path).copy()
+    combinations_df = pd.read_csv(combos_path).copy()
 
-    df = pd.read_csv(filtered_path).copy()
-    print("Loaded df shape:", df.shape)
+    features_cc_s = cc_df.merge(ss_df, on="inchikey", how="inner", suffixes=("", "_s"))
+    df = FeatureMapper().elementwise_similarity(combinations_df, features_cc_s)
 
-    # Making sure Bliss Score is numeric and drop rows without it
-    df["Bliss Score"] = pd.to_numeric(df["Bliss Score"], errors="coerce")
-    df = df[~df["Bliss Score"].isna()].copy()
-    print("After dropping NaN Bliss Score:", df.shape)
+    print("Full df shape:", df.shape)
 
     # ==========================
-    # 2) Feature columns (reduced elementwise only)
+    # 2) Feature columns
     # ==========================
     drop_cols = [
         "Drug A",
@@ -93,351 +164,278 @@ def main():
     ]
     feat_cols = [c for c in df.columns if c not in drop_cols]
 
-    print(f"\nReduced feature columns: {len(feat_cols)}")
-
     X = df[feat_cols].copy()
     y = df["Bliss Score"].astype(float).values
 
     pairs = df["Drug Pair"].astype(str).values
-    strains = df["Strain"].astype(str).values  # only for CV2 if used
     n = len(df)
 
-    print(f"Total samples: {n}")
-
     # ==========================
-    # 3) Outer splits (CV1 / CV2)
+    # 3) Outer splits (CV1 only)
     # ==========================
-    def make_split_cv1(verbose=True):
-        gss = GroupShuffleSplit(n_splits=1, test_size=0.20, random_state=42)
-        tr_idx, te_idx = next(gss.split(X, y, groups=pairs))
-
-        if verbose:
-            print("=" * 72)
-            print("CV1: Drug Pair grouping:")
-            print(f"Train size: {len(tr_idx)}")
-            print(f"Train size fraction: {round((len(tr_idx) / len(df)), 2) * 100}")
-            print(f"Test size: {len(te_idx)}")
-            print(f"Test size fraction: {round((len(te_idx) / len(df)), 2) * 100}")
-            print(f"Test + Train set: {len(tr_idx) + len(te_idx)}")
-            print("-" * 72)
-        return tr_idx, te_idx
-
-    def make_split_cv2(
-        strain_col: str = "Strain",
-        pair_col: str = "Drug Pair",
-        min_frac: float = 0.16,
-        max_frac: float = 0.20,
-        lambda_penalty: float = 1.0,
-        top_k_print: int = 5,
-        verbose: bool = True,
-    ):
+    def make_splits_cv1(n_splits=5, verbose=True):
         """
-        CV2: held out by Strain + Drug Pair, copied from exp03 logic.
+        Split data into outer test and outer train under Drug Pair held-out scheme (CV1)
+        over 5 folds.
+        
+        Returns:
+            tr_idx (np.ndarray of positions),
+            te_idx (np.ndarray of positions)
         """
-        S_all = df[strain_col].astype(str).values
-        P_all = df[pair_col].astype(str).values
-        strains_uni = sorted(np.unique(S_all).tolist())
-        n_total = len(df)
-        min_target = int(round(min_frac * n_total))
-        max_target = int(round(max_frac * n_total))
+        outer_cv = GroupKFold(n_splits=n_splits)
+        split_gen = outer_cv.split(X, y, groups=pairs)
 
-        if verbose:
-            print("=" * 72)
-            print("CV2 Strain + Drug Pair grouping:")
-            print(f"Total rows: {n_total} | Strain levels: {len(strains_uni)}")
-            print(
-                f"Target kept test rows ∈ "
-                f"[{min_target} ({min_frac:.0%}), {max_target} ({max_frac:.0%})]"
-            )
 
-        def eval_subset(S_test_set):
-            if not S_test_set:
-                return 0, 0, n_total, set(), -np.inf
-
-            mask_s = np.isin(S_all, list(S_test_set))
-            P_test_set = set(P_all[mask_s])
-            test_mask = mask_s & np.isin(P_all, list(P_test_set))
-            train_mask = (~mask_s) & (~np.isin(P_all, list(P_test_set)))
-
-            kept = int(test_mask.sum())
-            train = int(train_mask.sum())
-            dropped = n_total - (kept + train)
-            score = kept - lambda_penalty * dropped
-            return kept, train, dropped, P_test_set, score
-
-        candidates = []
-        for r in range(1, len(strains_uni) + 1):
-            for subset in itertools.combinations(strains_uni, r):
-                S_test = set(subset)
-                kept, train, dropped, P_test, score = eval_subset(S_test)
-                if min_target <= kept <= max_target:
-                    candidates.append(
-                        {
-                            "S_test": S_test,
-                            "P_test": P_test,
-                            "kept": kept,
-                            "train": train,
-                            "dropped": dropped,
-                            "score": score,
-                        }
-                    )
-
-        if not candidates:
-            if verbose:
-                print("-" * 72)
-                print(
-                    "No subsets hit the target kept-test band. "
-                    "You can widen [min_frac, max_frac] or allow manual S_test."
-                )
-                print("=" * 72)
-            return np.arange(n_total), np.array([], dtype=int), {
-                "reason": "no_candidate",
-                "test_strains": set(),
-                "test_pairs": set(),
-                "train_strains": set(strains_uni),
-                "train_pairs": set(np.unique(P_all).tolist()),
-                "kept_test_rows": 0,
-                "kept_train_rows": n_total,
-                "dropped_rows": 0,
-                "params": dict(
-                    min_frac=min_frac,
-                    max_frac=max_frac,
-                    lambda_penalty=lambda_penalty,
-                ),
-            }
-
-        candidates.sort(key=lambda c: (c["dropped"], -c["kept"], -c["score"]))
-
-        if verbose:
-            print("-" * 72)
-            print(
-                f"Valid candidates in band: {len(candidates)} | "
-                f"Showing top {min(top_k_print, len(candidates))}"
-            )
-            print(
-                "rank | #S | #P | kept(%) | dropped(%) | score | S_test (truncated)"
-            )
-            for i, c in enumerate(candidates[:top_k_print], 1):
-                kept_pct = 100.0 * c["kept"] / n_total
-                drop_pct = 100.0 * c["dropped"] / n_total
-                s_preview = ", ".join(list(sorted(c["S_test"]))[:3])
-                if len(c["S_test"]) > 3:
-                    s_preview += ", …"
-                print(
-                    f"{i:>4} | {len(c['S_test']):>2} | {len(c['P_test']):>3} | "
-                    f"{kept_pct:6.2f} | {drop_pct:9.2f} | {c['score']:>7.1f} | {s_preview}"
-                )
-
-        best = candidates[0]
-        S_test_best = best["S_test"]
-        P_test_best = best["P_test"]
-
-        test_mask = np.isin(S_all, list(S_test_best)) & np.isin(
-            P_all, list(P_test_best)
-        )
-        train_mask = (~np.isin(S_all, list(S_test_best))) & (
-            ~np.isin(P_all, list(P_test_best))
-        )
-
-        te_idx = np.where(test_mask)[0]
-        tr_idx = np.where(train_mask)[0]
-        dropped_rows = n_total - (te_idx.size + tr_idx.size)
-
-        S_train_best = set(strains_uni) - set(S_test_best)
-        P_train_best = set(np.unique(P_all).tolist()) - set(P_test_best)
-
-        if verbose:
-            print("-" * 72)
-            print("Chosen subset (BEST):")
-            print(f"#Test Strains: {len(S_test_best)} | #Test Pairs: {len(P_test_best)}")
-            print(
-                f"Train rows: {tr_idx.size} ({tr_idx.size/n_total*100:.2f}%)"
-            )
-            print(f"Test  rows: {te_idx.size} ({te_idx.size/n_total*100:.2f}%)")
-            print(
-                f"Dropped rows: {dropped_rows} "
-                f"({dropped_rows/n_total*100:.2f}%)"
-            )
-            print(f"Test + Train set: {len(tr_idx) + len(te_idx)}")
-            print(
-                f"Overlap Strains? {len(S_train_best & S_test_best)} (expect 0)"
-            )
-            print(f"Overlap Pairs?   {len(P_train_best & P_test_best)} (expect 0)")
-            print("=" * 72)
-
-        info = dict(
-            mode="bruteforce_strains",
-            test_strains=set(S_test_best),
-            train_strains=S_train_best,
-            test_pairs=set(P_test_best),
-            train_pairs=P_train_best,
-            kept_test_rows=int(te_idx.size),
-            kept_train_rows=int(tr_idx.size),
-            dropped_rows=int(dropped_rows),
-            params=dict(
-                min_frac=min_frac,
-                max_frac=max_frac,
-                lambda_penalty=lambda_penalty,
-            ),
-            top_candidates=candidates[:top_k_print],
-        )
-        return tr_idx, te_idx, info
+        splits = []
+        for fold_idx, (tr_idx, te_idx) in enumerate(split_gen, 1):
+            splits.append((tr_idx, te_idx))
+            # if verbose:
+            #     print("=" * 72)
+            #     print(f"CV1 outer fold {fold_idx}/{n_splits} (Drug Pair grouping):")
+            #     print(f"Train size: {len(tr_idx)}")
+            #     print(f"Train size fraction: {len(tr_idx) / len(df) * 100:.2f}%")
+            #     print(f"Test size: {len(te_idx)}")
+            #     print(f"Test size fraction: {len(te_idx) / len(df) * 100:.2f}%")
+            #     print(f"Test + Train set: {len(tr_idx) + len(te_idx)}")
+            #     print("-" * 72)
+        return splits
 
     if SCHEME == "CV1":
-        tr_idx, te_idx = make_split_cv1()
-        info = None
-    elif SCHEME == "CV2":
-        tr_idx, te_idx, info = make_split_cv2()
-        print("test strains:", info["test_strains"])
+        outer_splits = make_splits_cv1(n_splits=5, verbose=True)
     else:
-        raise ValueError("SCHEME must be 'CV1' or 'CV2'")
+        raise ValueError("SCHEME must be 'CV1' in this script.")
 
     # ==========================
-    # 4) Inner CV (nested)
+    # 4) LightGBM logger silence
     # ==========================
     class SilentLogger:
-        def info(self, msg): pass
-        def warning(self, msg): pass
+        def info(self, msg):
+            pass
+
+        def warning(self, msg):
+            pass
 
     lgb.register_logger(SilentLogger())
 
-    X_tr = X.iloc[tr_idx].reset_index(drop=True)
-    X_te = X.iloc[te_idx].reset_index(drop=True)
-    y_tr = y[tr_idx]
-    y_te = y[te_idx]
-    grp_tr = pairs[tr_idx]
+    # ==========================
+    # 5) Containers for results
+    # ==========================
+    fold_results = []
 
-    # random parameter sampler
-    def sample_one_params():
-        max_depth = 3  # shallow to fight overfit
-        leaves_map = {3: [7, 15]}
-        return dict(
-            boosting_type=rng.choice(["gbdt", "dart"], p=[0.6, 0.4]),
-            learning_rate=float(rng.choice([0.02, 0.03, 0.04, 0.05])),
-            max_depth=max_depth,
-            num_leaves=int(rng.choice(leaves_map[max_depth])),
-            min_data_in_leaf=int(rng.choice([100, 200])),
-            feature_fraction=float(rng.choice([0.30, 0.40])),
-            bagging_fraction=float(rng.choice([0.60, 0.80])),
-            bagging_freq=1,
-            lambda_l2=float(10 ** rng.uniform(1.2, 1.7)),
-            lambda_l1=float(rng.choice([0.0, 0.1, 0.5])),
-            max_bin=int(rng.choice([63, 127])),
-            min_gain_to_split=float(rng.choice([0.05, 0.10, 0.20])),
+    selected_counts = []
+    fi_per_fold = []
+
+    # ==========================
+    # 6) Outer loop
+    # ==========================
+    for fold_idx, (tr_idx, te_idx) in enumerate(outer_splits, 1):
+        print("\n" + "#" * 72)
+        print(f"########## OUTER FOLD {fold_idx}/{len(outer_splits)} ##########")
+        print("#" * 72 + "\n")
+
+        X_tr = X.iloc[tr_idx].reset_index(drop=True)
+        X_te = X.iloc[te_idx].reset_index(drop=True)
+        y_tr = y[tr_idx]
+        y_te = y[te_idx]
+        grp_tr = pairs[tr_idx]
+
+        print(f"Outer-train shape: {X_tr.shape}")
+        print(f"Outer-test shape : {X_te.shape}")
+
+        # The inner CV split, 3 folds, grouped by drug-pair
+        inner_cv = GroupKFold(n_splits=3)
+        inner_splitter = lambda: inner_cv.split(X_tr, y_tr, groups=grp_tr)
+
+
+        # Hyperparameter sampling
+        def sample_one_params():
+            max_depth = 3
+            leaves_map = {3: [7, 9, 15]}
+
+            return dict(
+                boosting_type="gbdt",
+                learning_rate=float(rng.choice([0.02, 0.03])),
+                max_depth=max_depth,
+                num_leaves=int(rng.choice(leaves_map[max_depth])),
+                min_data_in_leaf=int(rng.choice([200, 300])),
+                feature_fraction=float(rng.choice([0.30, 0.40, 0.50])),
+                bagging_fraction=float(rng.choice([0.60, 0.70, 0.80])),
+                bagging_freq=1,
+                lambda_l2=float(10 ** rng.uniform(1.4, 1.9)),
+                lambda_l1=float(rng.choice([0.0, 0.1, 0.5])),
+                max_bin=int(rng.choice([63, 127])),
+                min_gain_to_split=float(rng.choice([0.05, 0.10, 0.20])),
+            )
+
+        param_samples = [sample_one_params() for _ in range(32)]
+
+        # inner-CV hyperparameters scores and feature selection on INNER-TRAIN-ONLY
+        def cv_score_for_params(params):
+            """
+            Perform a full inner cross‑validation loop for a given hyperparameter
+            configuration.
+
+            For each inner fold:
+            - Fit the feature selector only on the inner‑train split.
+            - Select features for that fold.
+            - Train a LightGBM model with the provided hyperparameters.
+            - Evaluate RMSE on the inner‑validation split.
+
+            Returns the mean validation RMSE across inner folds, used for
+            comparing and ranking hyperparameter configurations in the nested CV.
+
+            It is trying to answer: “If we used this hyperparameter configuration, 
+            how well would the pipeline generalize?”
+            """    
+            scores = []
+
+            for inner_fold_idx, (tr_f, val_f) in enumerate(inner_splitter(), 1):
+                Xf_tr = X_tr.iloc[tr_f].reset_index(drop=True)
+                Xf_val = X_tr.iloc[val_f].reset_index(drop=True)
+                yf_tr = y_tr[tr_f]
+                yf_val = y_tr[val_f]
+
+                selected_inner = select_features_lgbm(
+                    X_train=Xf_tr,
+                    y_train=yf_tr,
+                    feat_cols=feat_cols,
+                    corr_min=corr_min,
+                    keep_top_frac=keep_top_frac,
+                )
+
+                Xf_tr_sel = Xf_tr[selected_inner]
+                Xf_val_sel = Xf_val[selected_inner]
+
+                m = lgb.LGBMRegressor(
+                    objective="regression",
+                    n_estimators=4000,
+                    random_state=777,
+                    n_jobs=4,
+                    **params,
+                )
+
+                m.fit(
+                    Xf_tr_sel,
+                    yf_tr,
+                    eval_set=[(Xf_val_sel, yf_val)],
+                    eval_metric="rmse",
+                    callbacks=[
+                        lgb.early_stopping(200, verbose=False),
+                        lgb.log_evaluation(0),
+                    ],
+                )
+
+                y_pred_inner = m.predict(Xf_val_sel)
+                rmse = root_mean_squared_error(yf_val, y_pred_inner)
+                scores.append(rmse)
+
+            rmse_mean = np.mean(scores)
+            return rmse_mean
+
+        print(
+            "\n--- Nested CV (outer fold "
+            f"{fold_idx}): inner search over {len(param_samples)} configs ---"
         )
 
-    param_samples = [sample_one_params() for _ in range(32)]
+        scores = [(cv_score_for_params(ps), ps) for ps in param_samples]
+        scores.sort(key=lambda t: t[0])
+        best_score, best_params = scores[0]
 
-    inner_cv = GroupKFold(n_splits=3)
+        print(
+            f"Best inner-CV RMSE (fold {fold_idx}): {best_score:.3f}\n"
+            f"Best params: {best_params}"
+        )
 
-    def inner_splitter():
-        return inner_cv.split(X_tr, y_tr, groups=grp_tr)
+        # feature selection on FULL outer-train only
+        selected_outer = select_features_lgbm(
+            X_train=X_tr,
+            y_train=y_tr,
+            feat_cols=feat_cols,
+            corr_min=corr_min,
+            keep_top_frac=keep_top_frac,
+        )
 
-    def cv_rmse_for_params(params):
-        """
-        Inner CV for regression: early-stop on RMSE, score = mean RMSE across folds.
-        Lower is better.
-        """
-        rmses = []
-        for tr_f, val_f in inner_splitter():
-            Xf_tr, Xf_val = X_tr.iloc[tr_f], X_tr.iloc[val_f]
-            yf_tr, yf_val = y_tr[tr_f], y_tr[val_f]
+        print(f"Selected features on outer-train: {len(selected_outer)}")
 
-            m = lgb.LGBMRegressor(
-                objective="regression",
-                n_estimators=4000,
-                random_state=777,
-                n_jobs=4,
-                **params,
+        selected_counts.append(
+            {
+                "outer_fold": fold_idx,
+                "n_selected_features": len(selected_outer),
+            }
+        )
+
+        selected_df = pd.DataFrame({"feature": selected_outer})
+        selected_df.to_csv(
+            out_dir / f"selected_features_outerfold{fold_idx}.csv",
+            index=False,
+        )
+
+        X_tr_sel = X_tr[selected_outer]
+        X_te_sel = X_te[selected_outer]
+
+        # final refit on full outer-train 
+        m_final = lgb.LGBMRegressor(
+            objective="regression",
+            n_estimators=4000,
+            random_state=777,
+            n_jobs=4,
+            **best_params,
+        )
+        m_final.fit(X_tr_sel, y_tr)
+
+        # store feature importance for this outer fold 
+        fi_gain_fold = m_final.booster_.feature_importance(importance_type="gain")
+        fi_per_fold.append(dict(zip(selected_outer, fi_gain_fold)))
+
+        # final evaluation on untouched outer-test
+        y_pred = m_final.predict(X_te_sel)
+
+        rmse = root_mean_squared_error(y_te, y_pred)
+        mae = mean_absolute_error(y_te, y_pred)
+        r2  = r2_score(y_te, y_pred)
+
+        fold_results.append(
+            dict(
+                rmse=rmse,
+                mae=mae,
+                r2=r2,
             )
-            m.fit(
-                Xf_tr,
-                yf_tr,
-                eval_set=[(Xf_val, yf_val)],
-                eval_metric="rmse",  # early stopping on RMSE
-                callbacks=[
-                    lgb.early_stopping(200, False),
-                    lgb.log_evaluation(0),
-                ],
+        )
+
+        print(f"Finished outer fold {fold_idx}")
+
+    # ==========================
+    # 7) Summary metrics
+    # ==========================
+    if len(fold_results) > 0:
+        print("\n" + "=" * 72)
+        print(f"=== Summary over {len(fold_results)} CV1 outer folds ===")
+
+        metric_names = list(fold_results[0].keys())
+        summary_rows = []
+
+        for metric in metric_names:
+            vals = np.array([fr[metric] for fr in fold_results], dtype=float)
+            mean_val = np.mean(vals)
+            std_val = np.std(vals)
+            print(f"{metric}_mean={mean_val:.4f}  {metric}_std={std_val:.4f}")
+            summary_rows.append(
+                dict(metric=metric, mean=mean_val, std=std_val)
             )
 
-            y_pred = m.predict(Xf_val)
-            rmse = np.sqrt(mean_squared_error(yf_val, y_pred))
-            rmses.append(rmse)
+        summary_df = pd.DataFrame(summary_rows)
+        summary_path = out_dir / f"cv_metrics_summary_{SCHEME.lower()}.csv"
+        summary_df.to_csv(summary_path, index=False)
+        print("\nSaved CV metrics summary to:", summary_path)
+        print("=" * 72)
 
-        return float(np.mean(rmses))
+        # save selected feature counts per fold
+        selected_counts_df = pd.DataFrame(selected_counts)
+        selected_counts_path = out_dir / "selected_feature_counts_per_fold.csv"
+        selected_counts_df.to_csv(selected_counts_path, index=False)
+        print("Saved selected feature counts to:", selected_counts_path)
+        
 
-    print("\n--- Nested CV: inner search over", len(param_samples), "configs ---")
-    scores = [(cv_rmse_for_params(ps), ps) for ps in param_samples]
-    scores.sort(key=lambda t: t[0])  # lower RMSE is better
-    best_rmse, best_params = scores[0]
-    print("Best inner-CV RMSE:", round(best_rmse, 4), "\nBest params:", best_params)
-
-    # ==========================
-    # 5) Final refit on outer-train
-    # ==========================
-    m_final = lgb.LGBMRegressor(
-        objective="regression",
-        n_estimators=4000,
-        random_state=777,
-        n_jobs=4,
-        **best_params,
-    )
-    m_final.fit(X_tr, y_tr)
-
-    # ==========================
-    # 6) Final evaluation on held-out test
-    # ==========================
-    y_te_pred = m_final.predict(X_te)
-    rmse_te = np.sqrt(mean_squared_error(y_te, y_te_pred))
-    mae_te = mean_absolute_error(y_te, y_te_pred)
-    r2_te = r2_score(y_te, y_te_pred)
-    spr_te = spearmanr(y_te, y_te_pred).statistic
-    pr_te = pearsonr(y_te, y_te_pred).statistic
-
-    print("\n=== Held-out Test (Regression) ===")
-    print("RMSE      :", round(rmse_te, 4))
-    print("MAE       :", round(mae_te, 4))
-    print("R^2       :", round(r2_te, 4))
-    print("Spearman ρ:", round(spr_te, 4))
-    print("Pearson r :", round(pr_te, 4))
-
-    # ==========================
-    # 7) Overfitting check
-    # ==========================
-    y_tr_pred = m_final.predict(X_tr)
-    rmse_tr = np.sqrt(mean_squared_error(y_tr, y_tr_pred))
-    mae_tr = mean_absolute_error(y_tr, y_tr_pred)
-    r2_tr = r2_score(y_tr, y_tr_pred)
-    spr_tr = spearmanr(y_tr, y_tr_pred).statistic
-    pr_tr = pearsonr(y_tr, y_tr_pred).statistic
-
-    print("\n=== Overfitting check (Regression) ===")
-    print("Train RMSE:", round(rmse_tr, 4), "| Test RMSE:", round(rmse_te, 4))
-    print("Train MAE :", round(mae_tr, 4),  "| Test MAE :", round(mae_te, 4))
-    print("Train R^2 :", round(r2_tr, 4),   "| Test R^2 :", round(r2_te, 4))
-    print("Train ρ   :", round(spr_tr, 4),  "| Test ρ   :", round(spr_te, 4))
-    print("Train r   :", round(pr_tr, 4),   "| Test r   :", round(pr_te, 4))
-
-    # ==========================
-    # 8) Pred vs True scatter → SAVE
-    # ==========================
-    fig, ax = plt.subplots(figsize=(5, 5))
-    ax.scatter(y_te, y_te_pred, alpha=0.4)
-    ax.set_xlabel("True Bliss Score")
-    ax.set_ylabel("Predicted Bliss Score")
-    ax.set_title(f"Pred vs True (R²={r2_te:.2f})")
-    # 45-degree line
-    min_val = min(np.min(y_te), np.min(y_te_pred))
-    max_val = max(np.max(y_te), np.max(y_te_pred))
-    ax.plot([min_val, max_val], [min_val, max_val], "r--", linewidth=1)
-
-    plt.tight_layout()
-    fig_path = out_dir / f"pred_vs_true_{SCHEME.lower()}.png"
-    fig.savefig(fig_path, dpi=150)
-    plt.close(fig)
-
-    print("\nSaved Pred vs True plot to:", fig_path)
     print("\n=== EXP08 DONE ===\n")
 
 

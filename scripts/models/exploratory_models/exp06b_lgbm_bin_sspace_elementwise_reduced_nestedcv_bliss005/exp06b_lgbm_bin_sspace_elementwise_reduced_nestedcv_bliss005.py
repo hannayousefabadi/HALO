@@ -21,9 +21,8 @@ Config
   - Final fit: refit best model on full outer-train, evaluate once on outer-test
 
 Data integrity note
-All preprocessing (missing values, dtypes, column validation, and label construction from Bliss using the
-±0.1 cutoff) is performed upstream in preprocessing notebooks/scripts. This script assumes the processed
-inputs are clean and consistent and that `Interaction Type` already reflects that cutoff.
+All preprocessing (missing values, dtypes, column validation, etc.) is performed upstream in preprocessing 
+notebooks/scripts. This script assumes the processed inputs are clean and consistent.
 
 Class encoding
 The binary target is encoded as {0,1} where 1 corresponds to synergy and is treated as the

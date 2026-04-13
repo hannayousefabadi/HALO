@@ -1,32 +1,23 @@
 #!/usr/bin/env python3
 """
-Experiment: exp09d_lgbm_bin_nosspace_elementwise_reduced_simplecv_bliss005
-(M4, CC-only, standard CV)
+Experiment: exp09d_lgbm_bin_nosspace_elementwise_reduced_simplecv_bliss005 (M4)
 
 Config
-- task: binary classification (synergy vs antagonism) after excluding neutral interactions via Bliss cutoff ±0.05
-- feature_design: CC-only elementwise similarity features built inside this script
-- use_sspace: false (no strain / S-space features; CC-derived elementwise features only)
-- cv_scheme: standard stratified split + standard stratified CV (no grouping by drug pair)
-- nested_cv: false (intentionally non-nested; optimistic baseline / “upper-bound” under lenient validation)
-- purpose: compare against group-aware HALO CV schemes by showing performance when pair-level leakage is allowed
+- model: LightGBM 
+- task: binary classification
+- feature_design: elementwise similarity 
+- sspace: disabled 
+- feature_selection: enabled (training set only)
+- bliss neutrality cutoff: ±0.05
 
-Training / selection
-- data: full CC-only feature matrix with binary labels (bliss=±0.05 filtering applied here)
-- outer split: single stratified train/test split (80/20)
-- feature selection: performed once on the training split only
-- hyperparameter tuning: RandomizedSearchCV with 5-fold StratifiedKFold on the reduced training split
-- model: LightGBM classifier (objective="binary"); randomized search scored by F1
+- CV:
+  - nested_cv: disabled
+  - stratified train/test split (80/20)
 
-Outputs
-- console: best hyperparameters, selected feature count, test-set classification metrics,
-  and an overfitting report
-- no grouped CV, no nested outer-fold aggregation, and no feature-importance artifacts
-
-Data integrity note:
-All preprocessing (NA handling, dtype enforcement, column validation, etc.)
-was completed in the preprocessing scripts.
-This script assumes clean, validated input data.
+  
+Data integrity note
+All preprocessing (missing values, dtypes, column validation, etc.) is performed upstream in preprocessing 
+notebooks/scripts. This script assumes the processed inputs are clean and consistent.
 """
 
 import numpy as np
@@ -111,15 +102,14 @@ def select_features_lgbm(
 
 def main():
     print(
-        "\n=== EXP09d: Simple CV + CC-only Elementwise Features, "
-        "Bliss cutoff ±0.05 ===\n"
+        "\n=== EXP09d ===\n"
     )
 
     corr_min = 0.01
     keep_top_frac = 0.30
 
     # ==========================
-    # 1) Load raw inputs and rebuild full CC-only elementwise feature table
+    # 1) Load raw inputs and build elementwise feature table
     # ==========================
     cc_path = CC_FEATURES / "cc_features_concat_25x128.csv"
     combos_path = PROCESSED / "halo_training_dataset.csv"
@@ -130,7 +120,7 @@ def main():
     features_cc = cc_df.copy()
     df = FeatureMapper().elementwise_similarity(combinations_df, features_cc)
 
-    print("Loaded full df:", df.shape)
+    print("Full df shape:", df.shape)
 
     # ==========================
     # 2) Keep binary classes only
@@ -140,7 +130,7 @@ def main():
     )
     df = df[df["Interaction Type"].isin(["synergy", "antagonism"])].copy()
 
-    print("\nFiltered (binary classes):", df.shape)
+    print("\nAfter filter to binary:", df.shape)
     print(df["Interaction Type"].value_counts())
 
     # ==========================
@@ -156,7 +146,7 @@ def main():
     ]
 
     feat_cols = [c for c in df.columns if c not in drop_cols]
-    print("Feature columns:", len(feat_cols))
+    # print("Feature columns:", len(feat_cols))
 
     X = df[feat_cols].copy()
     y = df["Interaction Type"].copy()

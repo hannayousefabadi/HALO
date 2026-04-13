@@ -28,9 +28,8 @@ Outputs (written into the exp06b result directory)
 - cc_vs_ss_topk_counts.csv        : CC vs SS counts within top k features (k = 20, 50, 100)
 
 Data integrity note
-- This script assumes clean, validated input data and an existing exp06b importance file.
-- The exp06b importance file may reflect feature importances aggregated across outer folds
-  after nested training and fold-internal feature selection.
+All preprocessing (missing values, dtypes, column validation, etc.) is performed upstream in preprocessing 
+notebooks/scripts. This script assumes the processed inputs are clean and consistent.
 """
 
 import pandas as pd

@@ -15,10 +15,7 @@ Config
   - labels are recomputed from Bliss in this script via `classify_interaction(bliss, additivity_cutoff=0.05)`
   - rows labeled neutral are excluded
 
-Goal
-Select a reduced subset of CC-only elementwise similarity features and export both the reduced 
-feature matrix and a mapping from selected elementwise features back to the
-originating CC base feature for interpretability and reuse in later experiments.
+Goal: Select a reduced subset of CC-only elementwise similarity features.
 
 Feature selection procedure (train split only)
 1) Variance filter: drop zero-variance features.
@@ -26,16 +23,9 @@ Feature selection procedure (train split only)
 3) Model-based filter: fit a fixed LightGBM classifier on the training split and keep the top fraction of
    features ranked by feature_importances_.
 
-Outputs
-- elementwise_features_filtered_cv1_cc_only.csv: metadata + selected elementwise features
-- selected_features_cv1_cc_only.txt: newline-separated selected feature names
-- selected_elementwise_feature_mapping_cc_only.csv: elementwise feature → CC base feature metadata
-
-
 Data integrity note
-All preprocessing of raw inputs (missing values, dtypes, and column validation) is performed upstream.
-This script assumes the processed inputs are clean and consistent; it recomputes interaction labels from
-Bliss using the ±0.05 cutoff as part of the experiment definition.
+All preprocessing (missing values, dtypes, column validation, etc.) is performed upstream in preprocessing 
+notebooks/scripts. This script assumes the processed inputs are clean and consistent.
 """
 
 import numpy as np

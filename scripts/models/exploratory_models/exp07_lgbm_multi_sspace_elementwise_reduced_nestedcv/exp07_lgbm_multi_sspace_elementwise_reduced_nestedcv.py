@@ -20,11 +20,10 @@ Config
     - selection metric: mean validation accuracy across inner folds
   - Final fit: refit best model on full outer-train, evaluate once on outer-test
 
-Data integrity note
-All preprocessing (missing values, dtypes, column validation, and label construction from Bliss using the
-±0.1 cutoff) is performed upstream in preprocessing notebooks/scripts. This script assumes the processed
-inputs are clean and consistent and that `Interaction Type` already reflects that cutoff.
 
+Data integrity note
+All preprocessing (missing values, dtypes, column validation, etc.) is performed upstream in preprocessing 
+notebooks/scripts. This script assumes the processed inputs are clean and consistent.
 """
 
 import numpy as np

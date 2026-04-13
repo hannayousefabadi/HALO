@@ -1,41 +1,35 @@
 #!/usr/bin/env python3
 """
-Experiment: exp10_nn_bin_sspace_elementwise_reduced_nestedcv (NN, HALO-S-CV1)
+Experiment: exp10_nn_bin_sspace_elementwise_reduced_nestedcv
 
 Config
-- task: binary classification (synergy vs antagonism) using Bliss cutoff ±0.10
-- feature_design: reduced elementwise similarity features (selected in exp05)
-- use_sspace: true (S-space features are already included in the reduced feature table; no feature recomputation here)
-- cv_scheme: CV1 (drug-pair held-out)
-- outer_split: single 80/20 GroupShuffleSplit grouped by Drug Pair (pair-disjoint held-out test)
-- nested_cv: true (hyperparameter selection performed only on the outer-train split)
-- inner_cv: 3-fold StratifiedGroupKFold grouped by Drug Pair to select the best DNN configuration
-- model: feed-forward neural network (MLP) with BatchNorm + ReLU + Dropout; trained with BCEWithLogitsLoss and Adam
-- selection metric: mean inner-fold ROC AUC with “synergy” treated as the positive class (ties broken by accuracy)
+- model: feed-forward neural network (MLP) with BatchNorm + ReLU + Dropout; trained with BCEWithLogitsLoss and Adam  
+- task: binary classification
+- feature_design: elementwise similarity 
+- sspace: enabled (strain-space features)
+- feature_selection: enabled (within CV folds)
+- bliss neutrality cutoff: ±0.1
 
-Training / evaluation
-1) Load reduced elementwise feature matrix (exp05) and keep binary labels.
-2) Create a CV1 outer split by drug-pair grouping (unseen pairs in outer-test).
-3) Run inner grouped CV over a small set of pre-defined NN hyperparameter configs (hidden sizes, dropout, lr, weight decay).
-4) Retrain the best config on the full outer-train set using early stopping (with an internal train/val split).
-5) Evaluate once on the untouched outer-test split and report AUC/accuracy/F1 plus per-class precision/recall/F1.
-6) Report an overfitting check by comparing outer-train vs outer-test metrics.
+- CV:
+  - nested_cv: enabled
+  - Outer split:
+    - CV1 scheme: drug pair held-out
+  - Inner split:
+    - StratifiedGroupKFold, groups = Drug Pair
+    - to select the best DNN configuration
+    - selection metric: mean inner-fold ROC AUC with “synergy” treated as the positive class (ties broken by accuracy)
+  - Final fit: refit best model on full outer-train, evaluate once on outer-test
 
-Outputs
-- console: chosen best config, outer-test metrics (ROC AUC, accuracy, F1 macro/weighted), confusion matrix,
-  classification report, per-class metrics, and an overfitting check
-- note: this script does not write per-fold artifacts because the outer evaluation is a single CV1 split
 
-**Data integrity note:**
-All preprocessing (NA handling, dtype enforcement, column validation, etc.)
-was completed in the preprocessing scripts.
-This notebook assumes clean, validated input data.
+Data integrity note
+All preprocessing (missing values, dtypes, column validation, etc.) is performed upstream in preprocessing 
+notebooks/scripts. This script assumes the processed inputs are clean and consistent.
 """
 
 import numpy as np
 import pandas as pd
-
-from sklearn.model_selection import GroupShuffleSplit, StratifiedGroupKFold
+import lightgbm as lgb
+from sklearn.model_selection import GroupShuffleSplit, StratifiedGroupKFold, train_test_split
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import (
     accuracy_score,
@@ -51,8 +45,8 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 
-from halo.paths import MODEL_RESULTS
-
+from halo.paths import CC_FEATURES, SS_FEATURES, PROCESSED
+from halo.mappers.feature_mapper import FeatureMapper
 # ==========================
 #  Dataset wrapper 
 # ==========================
@@ -130,7 +124,7 @@ def train_dnn(
     no_improve = 0
 
     for epoch in range(1, max_epochs + 1):
-        # ---- train ----
+        # train 
         model.train()
         train_losses = []
         for xb, yb in train_loader:
@@ -144,7 +138,7 @@ def train_dnn(
             optimizer.step()
             train_losses.append(loss.item())
 
-        # ---- val ----
+        # val
         model.eval()
         val_losses = []
         with torch.no_grad():
@@ -189,31 +183,98 @@ def predict_proba(model, X, device, batch_size=256):
     return np.concatenate(probs, axis=0)
 
 
+def select_features_lgbm(
+    X_train: pd.DataFrame,
+    y_train: np.ndarray,
+    feat_cols: list[str],
+    corr_min: float = 0.01,
+    keep_top_frac: float = 0.30,
+) -> list[str]:
+    """
+    Feature selection performed using training data only.
+
+    Steps
+    1) drop zero-variance features
+    2) correlation prefilter using |corr(feature, y)| >= corr_min
+       fallback: keep all variance-filtered features if none pass
+    3) LightGBM importance ranking and keep top fraction
+    """
+    var_series = X_train.var()
+    kept_after_var = [c for c in feat_cols if var_series[c] > 0.0]
+
+    if len(kept_after_var) == 0:
+        raise ValueError("No features remained after variance filtering.")
+
+    kept_after_corr = []
+    y_train_s = pd.Series(y_train, index=X_train.index)
+
+    for col in kept_after_var:
+        corr = X_train[col].corr(y_train_s)
+        if corr is not None and np.isfinite(corr) and abs(corr) >= corr_min:
+            kept_after_corr.append(col)
+
+    if not kept_after_corr:
+        kept_after_corr = kept_after_var.copy()
+
+    fs_model = lgb.LGBMClassifier(
+        objective="binary",
+        n_estimators=2000,
+        random_state=777,
+        n_jobs=1,
+        learning_rate=0.03,
+        max_depth=3,
+        num_leaves=15,
+        min_data_in_leaf=200,
+        feature_fraction=0.4,
+        bagging_fraction=0.8,
+        bagging_freq=1,
+        lambda_l2=50.0,
+        lambda_l1=0.0,
+        max_bin=127,
+        min_gain_to_split=0.05,
+    )
+
+    fs_model.fit(X_train[kept_after_corr], y_train)
+
+    feat_imp = pd.Series(
+        fs_model.feature_importances_,
+        index=kept_after_corr
+    ).sort_values(ascending=False)
+
+    n_keep = max(1, int(len(feat_imp) * keep_top_frac))
+    selected_features = feat_imp.index[:n_keep].tolist()
+    return selected_features
+
+
 # ==========================
 # Main 
 # ==========================
 
 def main():
-    print("\n=== EXP10: DNN + reduced elementwise + nested CV (CV1) ===\n")
+    print("\n=== EXP10 ===\n")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Using device:", device)
 
     # ==========================
-    # 1) Load reduced feature matrix (from exp05)
+    # 1) Load data
     # ==========================
-    reduced_path = MODEL_RESULTS / "exp05_lgbm_bin_sspace_elementwise_featselect" / "elementwise_features_filtered_cv1.csv"
+    cc_path = CC_FEATURES / "cc_features_concat_25x128.csv"
+    ss_path = SS_FEATURES / "sspace.csv"
+    combos_path = PROCESSED / "halo_training_dataset.csv"
 
-    if not reduced_path.exists():
-        raise FileNotFoundError(f"Reduced feature file not found: {reduced_path}")
+    cc_df = pd.read_csv(cc_path).copy()
+    ss_df = pd.read_csv(ss_path).copy()
+    combinations_df = pd.read_csv(combos_path).copy()
 
-    df = pd.read_csv(reduced_path).copy()
-    print("Loaded df:", df.shape)
-    print(df["Interaction Type"].value_counts())
+    features_cc_s = cc_df.merge(ss_df, on="inchikey", how="inner", suffixes=("", "_s"))
+    df = FeatureMapper().elementwise_similarity(combinations_df, features_cc_s)
+
+    print("Full df shape:", df.shape)
 
     # binary only
     df = df[df["Interaction Type"].isin(["synergy", "antagonism"])].copy()
-    print("\nAfter filtering (binary):", df.shape)
+    print("\nAfter filtering to binary:", df.shape)
     print(df["Interaction Type"].value_counts())
 
     # features / target
@@ -237,7 +298,6 @@ def main():
     print("Classes:", list(le.classes_))
     print("Total samples:", len(df))
     print("Num features:", len(feat_cols))
-    input_dim = len(feat_cols)
 
     # make mapping explicit
     synergy_code = le.transform(["synergy"])[0]
@@ -284,17 +344,27 @@ def main():
             start=1,
         ):
             print(f"  Fold {fold_idx}...")
-            X_tr = X_outer_tr.iloc[tr_idx].reset_index(drop=True)
+
+            feat_cols_current = X_outer_tr.columns.tolist()
+
+            selected_inner = select_features_lgbm(
+                X_train=X_outer_tr.iloc[tr_idx],
+                y_train=y_outer_tr[tr_idx],
+                feat_cols=feat_cols_current
+            )
+
+            X_tr = X_outer_tr.iloc[tr_idx][selected_inner]
             y_tr = y_outer_tr[tr_idx]
-            X_val = X_outer_tr.iloc[val_idx].reset_index(drop=True)
+            X_val = X_outer_tr.iloc[val_idx][selected_inner]
             y_val = y_outer_tr[val_idx]
+
 
             model = train_dnn(
                 X_tr,
                 y_tr,
                 X_val,
                 y_val,
-                input_dim=input_dim,
+                input_dim=len(selected_inner),
                 device=device,
                 hidden=cfg["hidden"],
                 dropout=cfg["dropout"],
@@ -337,6 +407,18 @@ def main():
     print("Mean inner AUC:", round(best_auc, 3), "Mean inner Acc:", round(best_acc, 3))
     print("Config:", best_cfg)
 
+    feat_cols_current = X_outer_tr.columns.tolist()
+
+    selected_outer = select_features_lgbm(
+        X_train=X_outer_tr,
+        y_train=y_outer_tr,
+        feat_cols=feat_cols_current
+    )
+    input_dim = len(selected_outer)
+
+    X_outer_tr_sel = X_outer_tr[selected_outer]
+    X_outer_te_sel = X_outer_te[selected_outer]
+
     # ==========================
     # 4) Final training on outer-train using best config
     # ==========================
@@ -344,16 +426,12 @@ def main():
 
     # Split outer-train into train/val for early stopping (not grouped, just stratified)
     # This is only inside the train side of the outer split.
-    from sklearn.model_selection import train_test_split
 
     X_tr_final, X_val_final, y_tr_final, y_val_final = train_test_split(
-        X_outer_tr,
-        y_outer_tr,
-        test_size=0.20,
-        random_state=999,
-        stratify=y_outer_tr,
+        X_outer_tr_sel, y_outer_tr, test_size=0.2, stratify=y_outer_tr, random_state=42
     )
 
+    # Train final model using selected features and best parameters
     final_model = train_dnn(
         X_tr_final,
         y_tr_final,
@@ -367,7 +445,6 @@ def main():
         weight_decay=best_cfg["weight_decay"],
         batch_size=64,
         max_epochs=120,
-        patience=15,
     )
 
     # ==========================
@@ -375,13 +452,13 @@ def main():
     # ==========================
     print("\n=== Evaluation on outer held-out test (pair-disjoint) ===\n")
 
-    probs_te = predict_proba(final_model, X_outer_te, device=device)
+    probs_te = predict_proba(final_model, X_outer_te_sel, device=device)
     y_pred_te = (probs_te >= 0.5).astype(int)
 
     # synergy-positive AUC
     y_outer_te_bin = (y_outer_te == synergy_code).astype(int)
 
-    # ---- Global metrics ----
+    # global metrics 
     roc_auc_test = roc_auc_score(y_outer_te_bin, probs_te)
     accuracy_test = accuracy_score(y_outer_te, y_pred_te)
     f1_weighted_test = f1_score(y_outer_te, y_pred_te, average="weighted")
@@ -398,7 +475,7 @@ def main():
         classification_report(y_outer_te, y_pred_te, target_names=le.classes_),
     )
 
-    # ---- Per-class metrics: antagonism (0), synergy (1) ----
+    # per-class metrics
     prec, rec, f1s, _ = precision_recall_fscore_support(
         y_outer_te,
         y_pred_te,
@@ -409,7 +486,7 @@ def main():
     recall_antag, recall_syn = rec
     f1_antag, f1_syn = f1s
 
-    # ---- Log-friendly block ----
+    # log-friendly block 
     print("\n--- Metrics for Log ---")
     print(f"accuracy_test={accuracy_test:.4f}")
     print(f"f1_macro_test={f1_macro_test:.4f}")
@@ -429,7 +506,7 @@ def main():
     # ==========================
     print("\n=== Overfitting check ===\n")
 
-    probs_tr = predict_proba(final_model, X_outer_tr, device=device)
+    probs_tr = predict_proba(final_model, X_outer_tr_sel, device=device)
     y_pred_tr = (probs_tr >= 0.5).astype(int)
 
     y_outer_tr_bin = (y_outer_tr == synergy_code).astype(int)
@@ -449,5 +526,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-

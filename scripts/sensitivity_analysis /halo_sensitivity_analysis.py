@@ -35,7 +35,6 @@ from halo.paths import CC_FEATURES, PROCESSED, RESULTS
 from halo.mappers.feature_mapper import FeatureMapper
 from halo.shared_utils.data_io import classify_interaction
 
-
 # ==========================
 # Helper functions
 # ==========================

@@ -16,9 +16,8 @@ Config
   - hyperparameter search: RandomizedSearchCV with StratifiedKFold (5-fold) on train only
 
 Data integrity note
-All preprocessing (missing values, dtypes, column validation, label construction, and filtering)
-is performed upstream in preprocessing notebooks/scripts. This script assumes the processed
-inputs are clean and consistent.
+All preprocessing (missing values, dtypes, column validation, etc.) is performed upstream in preprocessing 
+notebooks/scripts. This script assumes the processed inputs are clean and consistent.
 
 Class encoding
 The binary target is encoded as {0,1} where 1 corresponds to synergy and is treated as the
