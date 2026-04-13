@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate Supplementary Figure 1:
+Generate Figure 5:
 
 CV comparison schemes, compares predictive performance across evaluation schemes and model variants.
 
