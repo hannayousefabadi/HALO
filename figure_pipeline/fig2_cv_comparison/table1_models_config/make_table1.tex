@@ -1,0 +1,47 @@
+\documentclass[10pt]{article}
+
+\usepackage[margin=1.5cm]{geometry}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{caption}
+\usepackage{helvet}
+\renewcommand{\familydefault}{\sfdefault}
+
+\begin{document}
+
+\begin{table}[t]
+    \centering
+    \scriptsize
+    \setlength{\tabcolsep}{4pt}
+
+    \begin{tabular}{@{} l l l p{3.2cm} r r r @{}}
+        \toprule
+        \multicolumn{1}{c}{}                       &
+        \multicolumn{2}{c}{\textbf{Configuration}} &
+        \multicolumn{1}{c}{\textbf{Evaluation}}    &
+        \multicolumn{3}{c}{\textbf{Performance}}                                                                                                     \\
+        \cmidrule(lr){2-3}
+        \cmidrule(lr){4-4}
+        \cmidrule(lr){5-7}
+
+        % \multicolumn{7}{c}{\textbf{Model configuration and evaluation scheme}}                                                                 \\
+        % \midrule
+        Model
+                                                   & Strain features
+                                                   & Feature selection
+                                                   & Evaluation scheme
+                                                   & Accuracy
+                                                   & ROC-AUC
+                                                   & F1-weighted                                                                                     \\
+        \midrule
+        M1                                         & Yes               & Nested (within CV folds) & Drug pair + strain held‑out & 0.50 & 0.52 & 0.48 \\
+        M2                                         & Yes               & Nested (within CV folds) & Drug pair held‑out          & 0.68 & 0.74 & 0.68 \\
+        HALO                                       & No                & Nested (within CV folds) & Drug pair held‑out          & 0.68 & 0.74 & 0.68 \\
+        M3                                         & No                & Global (pre-CV)          & Drug pair held‑out          & 0.75 & 0.82 & 0.75 \\
+        M4                                         & No                & Training-set only        & Standard stratified split   & 0.76 & 0.84 & 0.76 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\end{document}
+

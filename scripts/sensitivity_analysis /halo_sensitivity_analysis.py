@@ -2,7 +2,7 @@
 """
 HALO sensitivity analysis
 
-- Bliss neutrality cutoff this script tests: [0.2, 0.1, 0.05, 0.02, 0]
+- Bliss neutrality cutoff this script tests: [0.2, 0.1, 0.05, 0.02, 0.0]
 
 Data integrity note
 All preprocessing (missing values, dtypes, column validation, and label construction from Bliss using the
@@ -101,8 +101,16 @@ def select_features_lgbm(
     selected_features = feat_imp.index[:n_keep].tolist()
     return selected_features
 
+
+def cutoff_to_str(c):
+    """
+    Convert cutoff float → safe filename string.
+    """
+    return f"{c:.2f}".replace(".", "p")
+
 # Bliss cutoffs to iterate through
-cutoff_values = [0.2, 0.1, 0.05, 0.02, 0]
+cutoff_values = [0.2, 0.1, 0.05, 0.02, 0.0]
+
 
 def main(c_value: float):
     # ==========================
@@ -136,6 +144,8 @@ def main(c_value: float):
     
     # enforce a new Bliss cutoff in each iteration
     current_cutoff = c_value
+    c_str = cutoff_to_str(c_value)
+
     df["Interaction Type"] = df["Bliss Score"].apply(
         lambda x: classify_interaction(x, additivity_cutoff=current_cutoff)
     )
@@ -587,7 +597,7 @@ def main(c_value: float):
     # 8) Aggregate scores across folds
     # ==========================
     test_out_all = pd.concat(all_test_dfs, ignore_index=True)
-    test_out_path = out_dir / f"test_predictions_{SCHEME.lower()}_{c_value}.csv"
+    test_out_path = out_dir / f"test_predictions_{SCHEME.lower()}_{c_str}.csv"
 
     test_out_all.to_csv(test_out_path, index=False)
     print("Saved aggregated test predictions to:", test_out_path)
@@ -624,7 +634,7 @@ def main(c_value: float):
         "n_test": int(sum(fr["n_test"] for fr in fold_results)),
     }
     metrics_test_df = pd.DataFrame([metrics_test])
-    metrics_test_path = out_dir / f"metrics_test_{SCHEME.lower()}_{c_value}.csv"
+    metrics_test_path = out_dir / f"metrics_test_{SCHEME.lower()}_{c_str}.csv"
     metrics_test_df.to_csv(metrics_test_path, index=False)
     print("Saved aggregated test metrics to:", metrics_test_path)
 
