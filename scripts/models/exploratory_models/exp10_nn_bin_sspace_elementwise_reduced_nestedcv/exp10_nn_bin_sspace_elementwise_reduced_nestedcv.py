@@ -8,7 +8,6 @@ Config
 - feature_design: elementwise similarity 
 - sspace: enabled (strain-space features)
 - feature_selection: enabled (within CV folds)
-- bliss neutrality cutoff: ±0.1
 
 - CV:
   - nested_cv: enabled

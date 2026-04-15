@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Experiment: exp09_lgbm_bin_sspace_elementwise_reduced_simplecv
+Experiment: exp09d_lgbm_bin_nosspace_elementwise_reduced_simplecv (M4)
 
 Config
 - model: LightGBM 
 - task: binary classification
 - feature_design: elementwise similarity 
-- sspace: enabled (strain-space features)
+- sspace: disabled 
 - feature_selection: enabled (training set only)
 
 - CV:
@@ -19,7 +19,6 @@ All preprocessing (missing values, dtypes, column validation, etc.) is performed
 notebooks/scripts. This script assumes the processed inputs are clean and consistent.
 """
 
-
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
@@ -31,7 +30,7 @@ from sklearn.model_selection import (
 )
 from sklearn.preprocessing import LabelEncoder
 
-from halo.paths import CC_FEATURES, SS_FEATURES, PROCESSED
+from halo.paths import CC_FEATURES, PROCESSED
 from halo.mappers.feature_mapper import FeatureMapper
 from halo.shared_utils.data_io import classify_interaction
 from halo.shared_utils.metrics import classification_metrics, overfitting_report
@@ -102,25 +101,23 @@ def select_features_lgbm(
 
 def main():
     print(
-        "\n=== EXP09 ===\n"
+        "\n=== EXP09d ===\n"
     )
 
     corr_min = 0.01
     keep_top_frac = 0.30
 
     # ==========================
-    # 1) Load raw inputs and rebuild full CC-only elementwise feature table
+    # 1) Load raw inputs and build elementwise feature table
     # ==========================
     cc_path = CC_FEATURES / "cc_features_concat_25x128.csv"
-    ss_path = SS_FEATURES / "sspace.csv"
     combos_path = PROCESSED / "halo_training_dataset.csv"
 
     cc_df = pd.read_csv(cc_path).copy()
-    ss_df = pd.read_csv(ss_path).copy()
     combinations_df = pd.read_csv(combos_path).copy()
 
-    features_cc_s = cc_df.merge(ss_df, on="inchikey", how="inner", suffixes=("", "_s"))
-    df = FeatureMapper().elementwise_similarity(combinations_df, features_cc_s)
+    features_cc = cc_df.copy()
+    df = FeatureMapper().elementwise_similarity(combinations_df, features_cc)
 
     print("Full df shape:", df.shape)
 
@@ -129,7 +126,7 @@ def main():
     # ==========================
     df = df[df["Interaction Type"].isin(["synergy", "antagonism"])].copy()
 
-    print("\nFiltered (binary classes):", df.shape)
+    print("\nAfter filter to binary:", df.shape)
     print(df["Interaction Type"].value_counts())
 
     # ==========================
@@ -145,7 +142,7 @@ def main():
     ]
 
     feat_cols = [c for c in df.columns if c not in drop_cols]
-    print("Feature columns:", len(feat_cols))
+    # print("Feature columns:", len(feat_cols))
 
     X = df[feat_cols].copy()
     y = df["Interaction Type"].copy()
@@ -253,21 +250,8 @@ def main():
         average="macro"
     )
 
-    print("\n=== EXP09 DONE ===\n")
+    print("\n=== EXP09d DONE ===\n")
 
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
-
-
-
-
-

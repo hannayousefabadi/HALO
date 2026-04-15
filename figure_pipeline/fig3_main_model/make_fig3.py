@@ -31,7 +31,7 @@ PLOT_DIR = FIGURES / "main"
 PLOT_DIR.mkdir(parents=True, exist_ok=True)
 FIG3_PATH_PNG = PLOT_DIR / "fig3.png"
 
-RESULT_DIR = MODEL_RESULTS / "exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv_bliss005"
+RESULT_DIR = MODEL_RESULTS / "exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv"
 SCHEME_SUFFIX = "cv1"
 METRICS_FOLDS_PATH = RESULT_DIR / f"metrics_per_fold_{SCHEME_SUFFIX}.csv"
 
@@ -239,7 +239,7 @@ def plot_panel_D(ax, df_test):
 # ==========================
 def plot_panel_E(ax, metrics_folds: pd.DataFrame):
     """
-    Per-fold test performance for exp06d (SynChecker-CV1 outer folds).
+    Per-fold test performance for exp06d (HALO outer folds).
 
     Expects columns (from exp06d training script):
         - 'fold'

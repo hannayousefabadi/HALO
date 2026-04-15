@@ -8,7 +8,6 @@ Config
 - feature_design: compact similarity (per-block cosine similarity + per-block normalized L2 similarity)
 - sspace: enabled (strain-space features)
 - feature_selection: disabled
-- bliss neutrality cutoff: ±0.1 (applied during preprocessing; this script assumes labels are already finalized)
 
 - CV:
   - nested_cv: enabled

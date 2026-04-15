@@ -23,10 +23,10 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 from halo.paths import MODEL_RESULTS, FEATURES, FIGURES
 
-RESULT_DIR_EXP06D = MODEL_RESULTS / "exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv_bliss005"
+RESULT_DIR_EXP06D = MODEL_RESULTS / "exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv"
 FI_PATH_EXP06D = RESULT_DIR_EXP06D / "feature_importances_cv1.csv"
 
-RESULT_DIR_EXP06B = MODEL_RESULTS / "exp06b_lgbm_bin_sspace_elementwise_reduced_nestedcv_bliss005"
+RESULT_DIR_EXP06B = MODEL_RESULTS / "exp06b_lgbm_bin_sspace_elementwise_reduced_nestedcv"
 CC_VS_SS_SUMMARY_PATH = RESULT_DIR_EXP06B / "cc_vs_ss_importance_summary.csv"
 
 PLOT_DIR = FIGURES / "main"

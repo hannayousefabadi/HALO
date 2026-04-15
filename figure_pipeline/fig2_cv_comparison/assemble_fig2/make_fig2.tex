@@ -1,0 +1,67 @@
+\documentclass{article}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{booktabs}
+\usepackage{capt-of}
+\usepackage[margin=0.5in]{geometry}
+
+% ---------------- Calibri (requires XeLaTeX) ----------------
+\usepackage{fontspec}
+\setmainfont[
+      Path = ../../fonts/,
+      AutoFakeBold = 2.0,
+      BoldFont = {calibrib.ttf}
+    ]{Calibri.ttf}
+
+
+\captionsetup[table]{labelformat=empty, skip=6pt}
+
+\begin{document}
+
+\centering
+
+% ---------------- Panel A (Table) ----------------
+\begin{minipage}{0.98\textwidth}
+    \centering
+    \small
+    \setlength{\tabcolsep}{10pt}
+
+    \captionof{table}{\textbf{A.} Model configuration, evaluation scheme, and performance.}
+
+    % NOTE: p{6cm} instead of p{3.2cm}
+    \begin{tabular}{@{} l l l p{6.0cm} r r r @{}}
+        \toprule
+              & \multicolumn{2}{c}{\textbf{Configuration}}
+              & \multicolumn{1}{c}{\textbf{Evaluation}}
+              & \multicolumn{3}{c}{\textbf{Performance}}                                                                                 \\
+        \cmidrule(lr){2-3} \cmidrule(lr){4-4} \cmidrule(lr){5-7}
+        Model & Strain features                            & Feature selection        & Evaluation scheme           & Acc. & AUC  & F1   \\
+        \midrule
+        M1    & Yes                                        & Nested (within CV folds) & Drug pair + strain held-out & 0.50 & 0.52 & 0.48 \\
+        M2    & Yes                                        & Nested (within CV folds) & Drug pair held-out          & 0.68 & 0.74 & 0.68 \\
+        HALO  & No                                         & Nested (within CV folds) & Drug pair held-out          & 0.68 & 0.74 & 0.68 \\
+        M3    & No                                         & Global (pre-CV)          & Drug pair held-out          & 0.75 & 0.82 & 0.75 \\
+        M4    & No                                         & Training-set only        & Standard stratified split   & 0.76 & 0.84 & 0.76 \\
+        \bottomrule
+    \end{tabular}
+\end{minipage}
+
+\vspace{1.5em}
+
+% ---------------- Panel B & C ----------------
+\begin{minipage}{0.98\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{fig2_panelB_C.png}
+\end{minipage}
+
+\vspace{1.5em}
+
+% ---------------- Panel D ----------------
+\begin{minipage}{0.98\textwidth}
+    \centering
+    % \includegraphics[width=\linewidth]{fig2_panelD.PNG}
+    \includegraphics[width=0.80\linewidth]{fig2_panelD.PNG}
+
+\end{minipage}
+
+\end{document}

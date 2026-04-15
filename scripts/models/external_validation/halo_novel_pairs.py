@@ -28,7 +28,7 @@ from halo.mappers.feature_mapper import FeatureMapper
 from halo.shared_utils.data_io import classify_interaction
 
 
-BEST_PARAMS_PATH = MODEL_RESULTS / "exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv_bliss005" / "best_params_cv1.json"
+BEST_PARAMS_PATH = MODEL_RESULTS / "exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv" / "best_params_cv1.json"
 CC_FEATURES_PATH = CC_FEATURES / "cc_features_concat_25x128.csv"
 COMBOS_PATH = PROCESSED / "halo_training_dataset.csv"
 
@@ -117,8 +117,8 @@ def similarity_calculation(df: pd.DataFrame) -> pd.DataFrame:
     cos_cols = [c for c in df.columns if c.startswith("cos_elem_")]
     euc_cols = [c for c in df.columns if c.startswith("euc_elem_")]
 
-    df["cc_cosine_mean"] = df[cos_cols].mean()
-    df["cc_euclidean_mean"] = df[euc_cols].mean()
+    df["cc_cosine_mean"] = df[cos_cols].mean(axis=1)
+    df["cc_euclidean_mean"] = df[euc_cols].mean(axis=1)
 
     return df
 
@@ -135,9 +135,6 @@ def load_training_data_from_raw(combos_path: Path, cc_features_path: Path):
 
     print("Loaded labeled full df shape:", df.shape)
 
-    df["Interaction Type"] = df["Bliss Score"].apply(
-        lambda x: classify_interaction(x, additivity_cutoff=0.05)
-    )
     df = df[df["Interaction Type"].isin(["synergy", "antagonism"])].copy()
 
     print("\nAfter filtering to synergy/antagonism:", df.shape)

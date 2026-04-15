@@ -83,8 +83,10 @@ def plot_grouped_bars(ax, values, model_labels, colors):
         )
 
         for px, py in zip(xpos, vals):
+
             ax.text(px, py + 0.01, f"{py:.2f}",
-                    ha="center", va="bottom", fontsize=9)
+                    ha="center", va="bottom", rotation=90, fontsize=9)
+
 
     ax.set_xticks(x)
     ax.set_xticklabels(metric_labels, fontsize=11)
@@ -99,7 +101,7 @@ fig, (axB, axC) = plt.subplots(1, 2, figsize=(10.5, 4))
 
 # Panel B
 plot_grouped_bars(axB, values_B, labels_B, colors_B)
-axB.set_title(r"$\mathbf{B}$.   CV strictness vs performance",
+axB.set_title(r"$\mathbf{B.}$" + "CV strictness vs performance",
               fontsize=11, loc="center", pad=8)
 axB.legend(
     fontsize=9,
@@ -113,7 +115,7 @@ axB.legend(
 
 # Panel C
 plot_grouped_bars(axC, values_C, labels_C, colors_C)
-axC.set_title(r"$\mathbf{C}$.   Model variants under CV1",
+axC.set_title(r"$\mathbf{C.}$" + "Model variants under CV1",
               fontsize=11, loc="center", pad=8)
 axC.legend(
     fontsize=9,
@@ -139,6 +141,6 @@ for ax in (axB, axC):
 # leave extra bottom space for legends
 fig.tight_layout(rect=[0, 0.12, 1, 1])
 
-OUT_DIR = OUT_DIR / "fig2_panelA_B"
+OUT_DIR = OUT_DIR / "fig2_panelB_C"
 fig.savefig(OUT_DIR.with_suffix(".png"), dpi=DPI, bbox_inches="tight")
 plt.close(fig)

@@ -3,8 +3,8 @@ from halo.paths import ALL_MODELS
 
 TARGET = (
     ALL_MODELS
-    / "exp09d_lgbm_bin_nosspace_elementwise_reduced_simplecv_bliss005"
-    / "exp09d_lgbm_bin_nosspace_elementwise_reduced_simplecv_bliss005.py"
+    / "exp09d_lgbm_bin_nosspace_elementwise_reduced_simplecv"
+    / "exp09d_lgbm_bin_nosspace_elementwise_reduced_simplecv.py"
 )
 
 if __name__ == "__main__":

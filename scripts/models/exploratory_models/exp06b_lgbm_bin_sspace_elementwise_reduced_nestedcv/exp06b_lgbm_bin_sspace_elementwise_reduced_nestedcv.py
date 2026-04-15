@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Experiment: exp07_lgbm_multi_sspace_elementwise_reduced_nestedcv
+Experiment: exp06b_lgbm_bin_sspace_elementwise_reduced_nestedcv
 
 Config
 - model: LightGBM 
-- task: multiclass classification
+- task: binary classification
 - feature_design: elementwise similarity 
 - sspace: enabled (strain-space features)
 - feature_selection: enabled (within CV folds)
@@ -19,10 +19,13 @@ Config
     - selection metric: mean validation accuracy across inner folds
   - Final fit: refit best model on full outer-train, evaluate once on outer-test
 
-
 Data integrity note
 All preprocessing (missing values, dtypes, column validation, etc.) is performed upstream in preprocessing 
 notebooks/scripts. This script assumes the processed inputs are clean and consistent.
+
+Class encoding
+The binary target is encoded as {0,1} where 1 corresponds to synergy and is treated as the
+positive class for F1 and ROC-AUC.
 """
 
 import numpy as np
@@ -45,6 +48,7 @@ from sklearn.metrics import (
 
 from halo.paths import CC_FEATURES, SS_FEATURES, PROCESSED, MODEL_RESULTS
 from halo.mappers.feature_mapper import FeatureMapper
+from halo.shared_utils.data_io import classify_interaction
 
 
 def select_features_lgbm(
@@ -84,7 +88,7 @@ def select_features_lgbm(
 
     # Step 3: model-based importance ranking
     fs_model = lgb.LGBMClassifier(
-        objective="multiclass",
+        objective="binary",
         n_estimators=2000,
         random_state=777,
         n_jobs=1,
@@ -127,11 +131,11 @@ def main():
     ss_path = SS_FEATURES / "sspace.csv"
     combos_path = PROCESSED / "halo_training_dataset.csv"
 
-    out_dir = MODEL_RESULTS / "exp07_lgbm_multi_sspace_elementwise_reduced_nestedcv"
+    out_dir = MODEL_RESULTS / "exp06b_lgbm_bin_sspace_elementwise_reduced_nestedcv"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(
-        "\n=== EXP07 ===\n"
+        "\n=== EXP06b ===\n"
     )
     # print("Using scheme:", SCHEME)
     print("Output dir :", out_dir)
@@ -150,9 +154,11 @@ def main():
 
     print("Full df shape:", df.shape)
 
-    # keep 3 classes
-    df = df[df["Interaction Type"].isin(["synergy", "antagonism", "neutral"])].copy()
-    print("\nAfter filtering 3 classes:", df.shape)
+    # Binary classes
+    df = df[df["Interaction Type"].isin(["synergy", "antagonism"])].copy()
+
+    print("\nAfter filtering to synergy/antagonism:", df.shape)
+    print(df["Interaction Type"].value_counts())
 
     # ==========================
     # 2) Feature columns
@@ -180,7 +186,8 @@ def main():
     pairs = df["Drug Pair"].astype(str).values
     n = len(df)
 
-    print("Classes:", list(le.classes_))
+    print(f"\nTotal samples: {n}")
+    print(f"Full feature columns: {len(feat_cols)}")
 
     # ==========================
     # 3) Outer splits (CV1 only)
@@ -245,9 +252,9 @@ def main():
     selected_counts = []
     fi_per_fold = []
 
+    synergy_code = le.transform(["synergy"])[0]
     ant_code = le.transform(["antagonism"])[0]
-    neu_code = le.transform(["neutral"])[0]
-    syn_code = le.transform(["synergy"])[0]
+
     # ==========================
     # 6) Outer loop
     # ==========================
@@ -342,7 +349,7 @@ def main():
                 Xf_val_sel = Xf_val[selected_inner]
 
                 m = lgb.LGBMClassifier(
-                    objective="multiclass",
+                    objective="binary",
                     n_estimators=4000,
                     random_state=777,
                     n_jobs=4,
@@ -353,7 +360,7 @@ def main():
                     Xf_tr_sel,
                     yf_tr,
                     eval_set=[(Xf_val_sel, yf_val)],
-                    eval_metric="multi_logloss",
+                    eval_metric="binary_logloss",
                     callbacks=[
                         lgb.early_stopping(200, verbose=False),
                         lgb.log_evaluation(0),
@@ -408,7 +415,7 @@ def main():
 
         # final refit on full outer-train 
         m_final = lgb.LGBMClassifier(
-            objective="multiclass",
+            objective="binary",
             n_estimators=4000,
             random_state=777,
             n_jobs=4,
@@ -420,42 +427,30 @@ def main():
         fi_gain_fold = m_final.booster_.feature_importance(importance_type="gain")
         fi_per_fold.append(dict(zip(selected_outer, fi_gain_fold)))
 
+        pos_idx = np.flatnonzero(m_final.classes_ == synergy_code)[0]
+
         # final evaluation on untouched outer-test
-        probs = m_final.predict_proba(X_te_sel)
-        y_pred = np.argmax(probs, axis=1)
+        p_te = m_final.predict_proba(X_te_sel)[:, pos_idx]
+        y_pred = (p_te >= 0.5).astype(int)
+
+        y_te_bin = (y_te == synergy_code).astype(int)
 
         accuracy_test = accuracy_score(y_te, y_pred)
         f1_macro_test = f1_score(y_te, y_pred, average="macro")
         f1_weighted_test = f1_score(y_te, y_pred, average="weighted")
-        roc_auc_test = roc_auc_score(y_te, probs, multi_class="ovr")
-
-        # per-class metrics (antagonism, neutral, synergy)
-        order = ["antagonism", "neutral", "synergy"]
-        order_idx = le.transform(order)
+        roc_auc_test = roc_auc_score(y_te_bin, p_te)
 
         prec, rec, f1s, _ = precision_recall_fscore_support(
             y_te,
             y_pred,
-            labels=order_idx,
+            labels=[ant_code, synergy_code],
         )
+        precision_antag, precision_syn = prec
+        recall_antag, recall_syn = rec
+        f1_antag, f1_syn = f1s
 
-        precision_antag, precision_neutral, precision_syn = prec
-        recall_antag, recall_neutral, recall_syn = rec
-        f1_antag, f1_neutral, f1_syn = f1s
-
-        # log-friendly lines
-        print(f"precision_antag={precision_antag:.4f}")
-        print(f"recall_antag={recall_antag:.4f}")
-        print(f"f1_antag={f1_antag:.4f}")
-
-        print(f"precision_neutral={precision_neutral:.4f}")
-        print(f"recall_neutral={recall_neutral:.4f}")
-        print(f"f1_neutral={f1_neutral:.4f}")
-
-        print(f"precision_syn={precision_syn:.4f}")
-        print(f"recall_syn={recall_syn:.4f}")
-        print(f"f1_syn={f1_syn:.4f}")
-    
+        order = ["antagonism", "synergy"]
+        order_idx = le.transform(order)
         cm = confusion_matrix(y_te, y_pred, labels=order_idx)
 
         if cm_total is None:
@@ -485,7 +480,7 @@ def main():
     # ==========================
     if len(fold_results) > 0:
         print("\n" + "=" * 72)
-        print(f"=== Summary over {len(fold_results)} CV1 outer folds ===")
+        print(f"=== Summary over {len(fold_results)} outer folds ===")
 
         metric_names = list(fold_results[0].keys())
         summary_rows = []
@@ -511,14 +506,13 @@ def main():
         selected_counts_df.to_csv(selected_counts_path, index=False)
         print("Saved selected feature counts to:", selected_counts_path)
         
-
         # ==========================
         # 8) Confusion matrix plot → SAVE
         # ==========================
         if cm_total is not None:
             cm_mean = cm_total / len(fold_results)
 
-            order = ["antagonism", "neutral", "synergy"]
+            order = ["antagonism", "synergy"]
 
             cm_path = out_dir / f"confusion_matrix_{SCHEME.lower()}_mean.csv"
             cm_df = pd.DataFrame(
@@ -576,8 +570,9 @@ def main():
         fi_df.to_csv(fi_path, index=False)
         print("\nSaved aggregated feature importances to:", fi_path)
 
-    print("\n=== EXP07 DONE ===\n")
+    print("\n=== EXP06b DONE ===\n")
 
 
 if __name__ == "__main__":
     main()
+

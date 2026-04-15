@@ -8,7 +8,6 @@ Config
 - feature_design: concatenation (drugA + drugB CC features)
 - sspace: disabled
 - feature selection: disabled
-- bliss neutrality cutoff ±0.1 (applied during preprocessing; this script assumes labels are already finalized)
 
 - CV:
   - nested_cv: disabled

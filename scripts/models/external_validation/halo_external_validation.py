@@ -6,7 +6,6 @@ Pipeline:
 
 1. Rebuild the internal HALO training matrix inside this script:
    - full CC-only elementwise features
-   - labels recomputed with Bliss cutoff ±0.05
 
 2. Load best hyperparameters from HALO:
    - file: best_params_cv1.json
@@ -54,7 +53,7 @@ SCHEME = "CV1"
 corr_min = 0.01
 keep_top_frac = 0.30
 
-exp06d_out = MODEL_RESULTS / "exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv_bliss005"
+exp06d_out = MODEL_RESULTS / "exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv"
 ext_out = MODEL_RESULTS / "external_validation" / "external_validation_chandrasekaran"
 ext_out.mkdir(parents=True, exist_ok=True)
 
@@ -139,9 +138,7 @@ df = fm.elementwise_similarity(combos_df, cc_df)
 
 print("Full df shape:", df.shape)
 
-df["Interaction Type"] = df["Bliss Score"].apply(
-    lambda x: classify_interaction(x, additivity_cutoff=0.05)
-)
+
 df = df[df["Interaction Type"].isin(["synergy", "antagonism"])].copy()
 
 print("\nAfter filtering to synergy/antagonism:", df.shape)
