@@ -170,7 +170,7 @@ le = LabelEncoder()
 y_enc = le.fit_transform(y_text)
 
 pairs = df["Drug Pair"].astype(str).values
-# n = len(df)
+n = len(df)
 
 # print(f"\nTotal samples: {n}")
 # print(f"Full feature columns (CC-only): {len(feat_cols)}")

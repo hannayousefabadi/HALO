@@ -202,9 +202,9 @@ def main():
                 random_state=42,
             )
             split_gen = outer_cv.split(X, y_enc, groups=pairs)
-        # except TypeError:
-        #     outer_cv = GroupKFold(n_splits=n_splits)
-        #     split_gen = outer_cv.split(X, y_enc, groups=pairs)
+        except TypeError:
+            outer_cv = GroupKFold(n_splits=n_splits)
+            split_gen = outer_cv.split(X, y_enc, groups=pairs)
 
         splits = []
         for fold_idx, (tr_idx, te_idx) in enumerate(split_gen, 1):
