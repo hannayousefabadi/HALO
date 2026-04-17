@@ -32,16 +32,16 @@ metric_labels = ["Accuracy", "F1-macro", "ROC-AUC"]
 
 # Panel B: CV strictness
 labels_B = ["M1", "M2", "HALO", "M3", "M4"]
-acc_B = np.array([0.76, 0.68, 0.68, 0.68, 0.50])
-f1_B  = np.array([0.76, 0.68, 0.68, 0.68, 0.50])
-auc_B = np.array([0.76, 0.68, 0.68, 0.68, 0.50])
+acc_B = np.array([0.50, 0.69, 0.70, 0.75, 0.76])
+f1_B  = np.array([0.50, 0.69, 0.70, 0.75, 0.76])
+auc_B = np.array([0.52, 0.78, 0.78, 0.84, 0.85])
 values_B = np.vstack([acc_B, f1_B, auc_B])
 
 # Panel C: model variants under CV1
 labels_C = ["HALO", "M2"]
-acc_C = np.array([0.68, 0.68])
-f1_C  = np.array([0.68, 0.68])
-auc_C = np.array([0.74, 0.74])
+acc_C = np.array([0.70, 0.69])
+f1_C  = np.array([0.70, 0.69])
+auc_C = np.array([0.78, 0.78])
 values_C = np.vstack([acc_C, f1_C, auc_C])
 
 # colors
@@ -115,11 +115,11 @@ axB.legend(
 
 # Panel C
 plot_grouped_bars(axC, values_C, labels_C, colors_C)
-axC.set_title(r"$\mathbf{C.}$" + "Model variants under CV1",
+axC.set_title(r"$\mathbf{C.}$" + "Model variants under drug pair held-out",
               fontsize=11, loc="center", pad=8)
 axC.legend(
     fontsize=9,
-    title="Model variant (CV1)",
+    title="Model variant (drug pair held-out)",
     title_fontsize=9,
     loc="upper center",
     bbox_to_anchor=(0.5, -0.25),

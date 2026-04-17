@@ -33,7 +33,7 @@ BLISS_COL = "Bliss Score"
 CLASS_COL = "Interaction_3class"
 
 DPI = 600
-ADDITIVITY_CUTOFF = 0.05  
+ADDITIVITY_CUTOFF = 0.1  
 
 
 STRAIN_RENAME = {
