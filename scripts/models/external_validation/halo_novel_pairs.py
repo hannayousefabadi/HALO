@@ -112,13 +112,18 @@ def similarity_calculation(df: pd.DataFrame) -> pd.DataFrame:
     Calculate row-wise CC Cosine and Euclidean similarity means.
     return dataframe with two new columns:
      - cc_cosine_mean
-      - cc_euclidean_mean
+     - cc_euclidean_mean
     """
     cos_cols = [c for c in df.columns if c.startswith("cos_elem_")]
     euc_cols = [c for c in df.columns if c.startswith("euc_elem_")]
 
     df["cc_cosine_mean"] = df[cos_cols].mean(axis=1)
+    df["cc_cosine_sd"]   = df[cos_cols].std(axis=1)
+    df["cc_cosine_var"]  = df[cos_cols].var(axis=1)
+
     df["cc_euclidean_mean"] = df[euc_cols].mean(axis=1)
+    df["cc_euclidean_sd"]   = df[euc_cols].std(axis=1)
+    df["cc_euclidean_var"]  = df[euc_cols].var(axis=1)
 
     return df
 
@@ -146,14 +151,16 @@ def load_training_data_from_raw(combos_path: Path, cc_features_path: Path):
     )
     df = similarity_calculation(df)
     cc_cos_mean_anta = df[df["Interaction Type"] == "antagonism"]["cc_cosine_mean"].mean()
+    cc_euc_mean_anta = df[df["Interaction Type"] == "antagonism"]["cc_euclidean_mean"].mean()
     cc_euc_mean_syn = df[df["Interaction Type"] == "synergy"]["cc_euclidean_mean"].mean()
     cc_cos_mean_syn = df[df["Interaction Type"] == "synergy"]["cc_cosine_mean"].mean()
-    cc_euc_mean_anta = df[df["Interaction Type"] == "antagonism"]["cc_euclidean_mean"].mean()
+    
 
     print(f"Mean of Cosine similarity in antagonistic pairs of HALO training dataset: {cc_cos_mean_anta}")    
+    print(f"Mean of Euclidean similarity in antagonistic pairs of HALO training dataset: {cc_euc_mean_anta}")
     print(f"Mean of Euclidean similarity in synergistic pairs of HALO training dataset: {cc_euc_mean_syn}")
     print(f"Mean of Cosine similarity in synergistic pairs of HALO training dataset: {cc_cos_mean_syn}")
-    print(f"Mean of Euclidean similarity in antagonistic pairs of HALO training dataset: {cc_euc_mean_anta}")
+    
 
     drop_cols = [
         "Drug A",
@@ -181,7 +188,23 @@ def load_training_data_from_raw(combos_path: Path, cc_features_path: Path):
     print(f"\nTotal labeled samples: {len(df)}")
     print(f"Number of full feature columns: {len(feat_cols)}")
 
-    return df, X, y_enc, le, feat_cols, cc_df
+    # build training summary table
+    summary_train = df[
+        [
+            "Pair_ID",
+            "Interaction Type",
+            "cc_cosine_mean",
+            "cc_cosine_sd",
+            "cc_cosine_var",
+            "cc_euclidean_mean",
+            "cc_euclidean_sd",
+            "cc_euclidean_var",
+        ]
+    ].copy()
+
+    summary_train["Set"] = "Training"
+
+    return df, X, y_enc, le, feat_cols, cc_df, summary_train
 
 
 def train_final_model(X, y_enc, le, feat_cols, best_params_path: Path):
@@ -396,20 +419,46 @@ def predict_novel_pairs(
         )
 
     cc_cos_mean_anta = top_ant["cc_cosine_mean"].mean()
+    cc_euc_mean_anta = top_ant["cc_euclidean_mean"].mean()
     cc_euc_mean_syn = top_syn["cc_euclidean_mean"].mean()
     cc_cos_mean_syn = top_syn["cc_cosine_mean"].mean()
-    cc_euc_mean_anta = top_ant["cc_euclidean_mean"].mean()
+    
 
-    print(f"Mean of Cosine similarity in predicted novel antagonistic pairs: {cc_cos_mean_anta}")    
+    print(f"Mean of Cosine similarity in predicted novel antagonistic pairs: {cc_cos_mean_anta}")
+    print(f"Mean of Euclidean similarity in predicted novel antagonistic pairs: {cc_euc_mean_anta}")    
     print(f"Mean of Euclidean similarity in predicted novel synergistic pairs: {cc_euc_mean_syn}")
     print(f"Mean of Cosine similarity in predicted novel synergistic pairs: {cc_cos_mean_syn}")
-    print(f"Mean of Euclidean similarity in predicted novel antagonistic pairs: {cc_euc_mean_anta}")
     
+    # build novel summary table
+    summary_novel = df_novel[
+        [
+            "Pair_ID",
+            "cc_cosine_mean",
+            "cc_cosine_sd",
+            "cc_cosine_var",
+            "cc_euclidean_mean",
+            "cc_euclidean_sd",
+            "cc_euclidean_var",
+            "p_synergy",
+            "p_antagonism",
+        ]
+    ].copy()
+
+    summary_novel["Set"] = "Novel"
+    summary_novel["Interaction Type"] = np.where(
+        summary_novel["p_synergy"] >= 0.5,
+        "Synergy",
+        "Antagonism",
+    )
+
+    return summary_novel
+
+
 
 def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    df_train, X, y_enc, le, feat_cols, cc_df = load_training_data_from_raw(
+    df_train, X, y_enc, le, feat_cols, cc_df, summary_train = load_training_data_from_raw(
         COMBOS_PATH,
         CC_FEATURES_PATH,
     )
@@ -425,7 +474,7 @@ def main():
 
     fmap = FeatureMapper()
 
-    predict_novel_pairs(
+    summary_novel = predict_novel_pairs(
         model=m_final,
         pos_idx=pos_idx,
         feat_cols=selected_feat_cols,
@@ -435,6 +484,14 @@ def main():
         fmap=fmap,
         cc_features_df=cc_df,
     )
+    # combine and save summary tables for plotting
+    summary_all = pd.concat([summary_train, summary_novel], ignore_index=True)
+
+    summary_path = OUT_DIR / "cc_similarity_summary.csv"
+    summary_all.to_csv(summary_path, index=False)
+
+    print("\nSaved full similarity summary table to:", summary_path)
+
 
 
 if __name__ == "__main__":
