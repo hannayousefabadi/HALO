@@ -1,4 +1,4 @@
-PWD /home/hany/projects/halo/HALO_repo/figure_pipeline/fig2_cv_comparison/table1_models_config
+PWD /home/hany/projects/halo/HALO_repo/figure_pipeline/fig2_cv_comparison/assemble_fig2
 INPUT /etc/texmf/web2c/texmf.cnf
 INPUT /usr/share/texmf/web2c/texmf.cnf
 INPUT /usr/share/texlive/texmf-dist/web2c/texmf.cnf

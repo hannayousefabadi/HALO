@@ -1,7 +1,7 @@
 Dataset statistics after curation
 ---------------------------------
 CSV_PATH: /home/hany/projects/halo/HALO_repo/data/d_processed/halo_training_dataset.csv
-ADDITIVITY_CUTOFF: 0.05
+ADDITIVITY_CUTOFF: 0.1
 
 Total assays (pair–strain samples): 3160
 Unique drug pairs: 1346
