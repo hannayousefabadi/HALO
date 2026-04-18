@@ -1,0 +1,59 @@
+\documentclass[10pt]{article}
+
+\usepackage[margin=1.5cm]{geometry}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{caption}
+\usepackage{helvet}
+\renewcommand{\familydefault}{\sfdefault}
+
+\begin{document}
+
+\begin{table}[t]
+    \centering
+    \scriptsize
+    \setlength{\tabcolsep}{4pt}
+
+    \begin{tabular}{@{} l r r p{5.5cm} r r @{}}
+        \toprule
+        \multicolumn{6}{c}{\textbf{Predicted Synergistic Pairs}}                                                                                     \\
+        \midrule
+        Drug Pair
+                                          & $P(\mathrm{syn})$
+                                          & $P(\mathrm{ant})$
+                                          & Drug Classes
+                                          & Cosine Similarity
+                                          & Euclidean Similarity                                                                                     \\
+        \midrule
+        Cefaclor + Penicillin V           & 0.999                & 0.000 & Cephalosporin (2nd gen) -- Penicillin                     & 0.000 & 0.931 \\
+        Bacitracin + Capreomycin          & 0.999                & 0.000 & Polypeptide antibiotic -- Aminoglycoside antibiotic       & 0.000 & 0.943 \\
+        Cefaclor + Temocillin             & 0.998                & 0.001 & Cephalosporin (2nd gen) -- Penicillin                     & 0.000 & 0.934 \\
+        Benzylpenicillin + Flucloxacillin & 0.998                & 0.001 & Penicillin -- Penicillin                                  & 0.000 & 0.952 \\
+        Cefaclor + Ticarcillin            & 0.998                & 0.001 & Cephalosporin (2nd gen) -- Penicillin                     & 0.000 & 0.936 \\
+        Bacitracin + Vancomycin           & 0.998                & 0.001 & Polypeptide antibiotic -- Glycopeptide antibiotic         & 0.000 & 0.936 \\
+        Cefaclor + Mezlocillin            & 0.997                & 0.002 & Cephalosporin (2nd gen) -- Penicillin (ureidopenicillin)  & 0.000 & 0.936 \\
+        Carbenicillin + Cefaclor          & 0.997                & 0.002 & Penicillin (carboxypenicillin) -- Cephalosporin (2nd gen) & 0.000 & 0.940 \\
+        Chir-90 + Tylvalosin              & 0.997                & 0.002 & Lipid A biosynthesis inhibitor -- Macrolide antibiotic    & 0.000 & 0.903 \\
+        Colistin A + Colistin B           & 0.997                & 0.002 & Polymyxin antibiotic -- Polymyxin antibiotic              & 0.000 & 0.990 \\
+
+        % Bacitracin + Vancomycin   & 0.996                   & 0.002 & Polypeptide antibacterial -- Glycopeptide             & 0.599 & 0.724 \\
+        % Bacitracin + Oritavancin  & 0.997                   & 0.003 & Polypeptide antibacterial -- Glycopeptide (lipoglycopeptide) & 0.653 & 0.711 \\
+        % Mecillinam + Cefuroxime   & 0.995                   & 0.005 & Penicillin (amidino) -- Cephalosporin (2nd gen)       & 0.627 & 0.693 \\
+        % Bacitracin + Minocycline  & 0.994                   & 0.006 & Polypeptide antibacterial -- Tetracycline-class antibiotic   & 0.543 & 0.620 \\
+        % Cefuroxime + Penicillin G & 0.990                   & 0.007 & Cephalosporin (2nd gen) -- Natural penicillin         & 0.655 & 0.660 \\
+        % Bacitracin + Thymol       & 0.993                   & 0.007 & Polypeptide antibacterial -- Monoterpene phenol              & 0.456 & 0.487 \\
+        % Cefuroxime + Amikacin     & 0.993                   & 0.007 & Cephalosporin (2nd gen) -- Aminoglycoside                    & 0.545 & 0.596 \\
+        % Bacitracin + Procaine     & 0.990                   & 0.008 & Polypeptide antibacterial -- Local anesthetic (ester) & 0.463 & 0.561 \\
+        % Bacitracin + Daptomycin   & 0.992                   & 0.008 & Polypeptide antibacterial -- Lipopeptide antibiotic   & 0.762 & 0.759 \\
+        % Telithromycin + Tedizolid & 0.991                   & 0.009 & Ketolide -- Oxazolidinone                                    & 0.477 & 0.533 \\
+
+
+
+
+
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\end{document}
+
