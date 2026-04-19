@@ -1,0 +1,67 @@
+\documentclass{article}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{booktabs}
+\usepackage{capt-of}
+\usepackage[margin=0.5in]{geometry}
+
+% ---------------- Calibri (requires XeLaTeX) ----------------
+\usepackage{fontspec}
+\setmainfont[
+      Path = ../../fonts/,
+      AutoFakeBold = 2.0,
+      BoldFont = {calibrib.ttf}
+    ]{Calibri.ttf}
+
+
+\captionsetup[table]{labelformat=empty, skip=6pt}
+
+\begin{document}
+
+\centering
+
+% ---------------- Panel A (Table) ----------------
+\begin{minipage}{0.98\textwidth}
+    \centering
+    \small
+    \setlength{\tabcolsep}{10pt}
+
+    \captionof{table}{\textbf{A.} Top 10 predicted novel pairs}
+
+    \begin{tabular}{@{} l r r l @{}}
+        \toprule
+        Drug Pair
+                                          & $P(\mathrm{syn})$
+                                          & $P(\mathrm{ant})$
+                                          & Drug Classes                                                                          \\
+        \midrule
+        Cefaclor + Penicillin V           & 0.999             & 0.000 & Cephalosporin (2nd gen) -- Penicillin                     \\
+        Bacitracin + Capreomycin          & 0.999             & 0.000 & Polypeptide antibiotic -- Aminoglycoside antibiotic       \\
+        Cefaclor + Temocillin             & 0.998             & 0.001 & Cephalosporin (2nd gen) -- Penicillin                     \\
+        Benzylpenicillin + Flucloxacillin & 0.998             & 0.001 & Penicillin -- Penicillin                                  \\
+        Cefaclor + Ticarcillin            & 0.998             & 0.001 & Cephalosporin (2nd gen) -- Penicillin                     \\
+        Bacitracin + Vancomycin           & 0.998             & 0.001 & Polypeptide antibiotic -- Glycopeptide antibiotic         \\
+        Cefaclor + Mezlocillin            & 0.997             & 0.002 & Cephalosporin (2nd gen) -- Penicillin (ureidopenicillin)  \\
+        Carbenicillin + Cefaclor          & 0.997             & 0.002 & Penicillin (carboxypenicillin) -- Cephalosporin (2nd gen) \\
+        Chir-90 + Tylvalosin              & 0.997             & 0.002 & Lipid A biosynthesis inhibitor -- Macrolide antibiotic    \\
+        Colistin A + Colistin B           & 0.997             & 0.002 & Polymyxin antibiotic -- Polymyxin antibiotic              \\
+        \bottomrule
+    \end{tabular}
+\end{minipage}
+
+\vspace{1.5em}
+
+% ---------------- Panel B & C ----------------
+\begin{minipage}{0.98\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{fig6_panelB_C.png}
+\end{minipage}
+
+\vspace{1.5em}
+
+% ---------------- Panel D ----------------
+
+\end{document}
+
+
+

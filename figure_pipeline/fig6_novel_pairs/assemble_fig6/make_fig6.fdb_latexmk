@@ -1,9 +1,9 @@
 # Fdb version 3
-["xdvipdfmx"] 1776610584 "make_fig2.xdv" "make_fig2.pdf" "make_fig2" 1776610589
-  "make_fig2.xdv" 1776610584 5940 d42baacaee9dafb4d8b3ed8401bbee85 "xelatex"
+["xdvipdfmx"] 1776573198 "make_fig6.xdv" "make_fig6.pdf" "make_fig6" 1776573200
+  "make_fig6.xdv" 1776573198 9456 72837c010e6c6a1fe847b9885339addf "xelatex"
   (generated)
-  "make_fig2.pdf"
-["xelatex"] 1776610584 "make_fig2.tex" "make_fig2.xdv" "make_fig2" 1776610589
+  "make_fig6.pdf"
+["xelatex"] 1776573197 "make_fig6.tex" "make_fig6.xdv" "make_fig6" 1776573200
   "/etc/texmf/web2c/texmf.cnf" 1765287839 475 c0e671620eb5563b2130f56340a5fde8 ""
   "/usr/share/texlive/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
   "/usr/share/texlive/texmf-dist/fonts/tfm/public/cm/cmmi6.tfm" 1136768653 1512 f21f83efb36853c0b70002322c1ab3ad ""
@@ -39,11 +39,10 @@
   "/usr/share/texlive/texmf-dist/web2c/texmf.cnf" 1581979058 38841 ce3692aa899bb693b90b87eaa5d4d84e ""
   "/usr/share/texmf/web2c/texmf.cnf" 1581979058 38841 ce3692aa899bb693b90b87eaa5d4d84e ""
   "/var/lib/texmf/web2c/xetex/xelatex.fmt" 1765478329 4647836 9f4b53845cb66cb2a6257b24bdc08477 ""
-  "fig2_panelB_C.png" 1776418941 274952 e74c0544d1667e03686929e562eb2d5f ""
-  "fig2_panelD.PNG" 1776610528 912514 e02e096d400b37e242fb3e60c822fe12 ""
-  "make_fig2.aux" 1776610584 185 869c6e12581604f5184bb22408da29f9 "xelatex"
-  "make_fig2.tex" 1776528573 2452 5e8357cfaa030b81e73757729d8ddb1d ""
+  "fig6_panelB_C.png" 1776573087 1737463 05106d71a879f6b9cbf89d42a84178f4 ""
+  "make_fig6.aux" 1776573198 157 c4c46781d83430b7a73c10f9e0c94365 "xelatex"
+  "make_fig6.tex" 1776573190 2638 52eef3979fb4014dfe3210201babba11 ""
   (generated)
-  "make_fig2.log"
-  "make_fig2.xdv"
-  "make_fig2.aux"
+  "make_fig6.xdv"
+  "make_fig6.log"
+  "make_fig6.aux"
