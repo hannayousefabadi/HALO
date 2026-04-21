@@ -8,7 +8,7 @@
 % ---------------- Calibri (requires XeLaTeX) ----------------
 \usepackage{fontspec}
 \setmainfont[
-      Path = ../../fonts/,
+      Path = ../cd fonts/,
       AutoFakeBold = 2.0,
       BoldFont = {calibrib.ttf}
     ]{Calibri.ttf}
@@ -20,13 +20,12 @@
 
 \centering
 
-% ---------------- Panel A (Table) ----------------
 \begin{minipage}{0.98\textwidth}
     \centering
     \small
     \setlength{\tabcolsep}{10pt}
 
-    \captionof{table}{\textbf{A.} Top 10 predicted novel pairs}
+    \captionof{table}{\textbf{Table 1.} Top 10 predicted synergistic novel pairs}
 
     \begin{tabular}{@{} l r r l @{}}
         \toprule
@@ -51,15 +50,6 @@
 
 \vspace{1.5em}
 
-% ---------------- Panel B & C ----------------
-\begin{minipage}{0.98\textwidth}
-    \centering
-    \includegraphics[width=\linewidth]{fig6_panelB_C.png}
-\end{minipage}
-
-\vspace{1.5em}
-
-% ---------------- Panel D ----------------
 
 \end{document}
 

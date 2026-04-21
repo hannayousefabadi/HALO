@@ -17,6 +17,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+
 # ==========================
 # Paths
 # ==========================
@@ -39,11 +40,11 @@ FEATURE_META_PATH = FEATURES / "feature_metadata_cc_s_full.csv"
 # Global style + palette
 # ==========================
 
-TITLE_SIZE = 14
-LABEL_SIZE = 14
+TITLE_SIZE = 16
+LABEL_SIZE = 16 
 TICK_SIZE = 12
 ANNOT_SIZE = 12
-BAR_LABEL_SIZE = 12
+BAR_LABEL_SIZE = 14
 
 plt.rcParams.update(
     {
@@ -55,12 +56,38 @@ plt.rcParams.update(
     }
 )
 
+# colors
 MAIN_BLUE = "#1f77b4"
 PASTEL_GREEN = "#A7D7A0"
 PASTEL_PEACH = "#F7C9A9"
+PASTEL_BLUE   = "#7BAFD4"
 
 BAR_EDGE_COLOR = "black"
 BAR_EDGE_WIDTH = 0.4
+
+# helpers
+def short_label(text):
+    replacements = {
+        "Chemical genetics": "Chem. genetics",
+        "Mechanisms of action": "Mech. of action",
+        "Small molecule roles": "Small mol. roles",
+        "Small molecule pathways": "Small mol. pathways",
+        "Structural keys": "Struct. keys",
+        "Metabolic genes": "Metab. genes",
+        "Side effects": "Side effects",
+        "2D fingerprints": "2D fingerprints",
+        "Indications": "Indications",
+        "Transcription": "Transcript.",
+        "Therapeutic areas": "Therap. areas",
+        "Diseases & toxicology": "Disease/tox.",
+        "Cancer cell lines": "Cancer cell lines",
+        "Signaling pathways": "Signaling paths.",
+    }
+    return replacements.get(text, text)
+
+def clean_axis(ax):
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
 
 # ==========================
 # Load data
@@ -198,17 +225,17 @@ def decode_elementwise_feature(feat_name: str, meta: pd.DataFrame, n_cc_dims: in
 
 
 # ==========================
-# Panel A – top-20 features
+# Panel A – top-15 features
 # ==========================
 
-def plot_panel_A(ax, df_importance, meta, n_cc_dims, top_n=20):
-    top = df_importance.head(top_n).copy()
+def plot_panel_A(ax, df_importance, meta, n_cc_dims, top_n=12):
+    df = df_importance.copy()
 
-    decoded = top["feature"].apply(
+    decoded = df["feature"].apply(
         lambda f: decode_elementwise_feature(f, meta, n_cc_dims)
     )
     decoded_df = pd.DataFrame(list(decoded))
-    top = pd.concat([top, decoded_df], axis=1)
+    df = pd.concat([df, decoded_df], axis=1)
 
     def build_label(row):
         if (
@@ -220,136 +247,59 @@ def plot_panel_A(ax, df_importance, meta, n_cc_dims, top_n=20):
 
         sub = row.get("cc_sublevel_name")
         if isinstance(sub, str) and sub != "":
-            return f"{row['metric']} / {sub}"
-        return f"{row['metric']} / {row['group_label']}"
+            return f"{row['metric']} / {short_label(sub)}"
 
-    top["nice_label"] = top.apply(build_label, axis=1)
-    top = top.iloc[::-1]
+        return f"{row['metric']} / {short_label(row['group_label'])}"
 
-    colors = []
-    for _, row in top.iterrows():
-        if (
-            row["space_name"] == "Strain-space"
-            or row["group_label"] == "Strain-space"
-            or row["cc_level"] == "Strain"
-        ):
-            colors.append(PASTEL_PEACH)
-        else:
-            colors.append(MAIN_BLUE)
+    df["nice_label"] = df.apply(build_label, axis=1)
+
+    agg = (
+        df.groupby("nice_label")["importance_gain"]
+        .sum()
+        .sort_values(ascending=False)
+        .head(top_n)
+        .reset_index()
+    )
+
+    agg = agg.iloc[::-1].reset_index(drop=True)
+    y = np.arange(len(agg))
 
     ax.barh(
-        top["nice_label"],
-        top["importance_gain"],
-        color=colors,
+        y,
+        agg["importance_gain"],
+        color=MAIN_BLUE,
         edgecolor=BAR_EDGE_COLOR,
         linewidth=BAR_EDGE_WIDTH,
     )
-    ax.set_xlabel("Gain-based importance", fontsize=LABEL_SIZE)
+
+    ax.set_yticks(y)
+    ax.set_yticklabels(agg["nice_label"], fontsize=BAR_LABEL_SIZE)
+    ax.set_xlabel("Gain-based importance")
 
     ax.set_title(
-        r"$\mathbf{A.}$" + "  Top 20 similarity features by gain (HALO)",
+        r"$\mathbf{A.}$  Top similarity feature groups by gain",
         fontsize=TITLE_SIZE,
-        loc="center",
-        pad=10,
+        pad=8,
     )
 
-    ax.tick_params(axis="y", labelsize=BAR_LABEL_SIZE)
-    # plt.subplots_adjust(left=0.4)
+    clean_axis(ax)
 
 # ==========================
 # Panel B – grouped importance (sublevels + strain)
 # ==========================
-
 def plot_panel_B(ax, df_importance, meta, n_cc_dims):
+    """
+    Panel B:
+    CC domain contributions to normalized gain (HALO)
+    """
+
     df_imp = df_importance.copy()
-    df_imp = df_imp[df_imp["feature"].str.startswith(("cos_elem_", "euc_elem_"))].copy()
+    df_imp = df_imp[df_imp["feature"].str.startswith(("cos_elem_", "euc_elem_"))]
 
     decoded = df_imp["feature"].apply(
         lambda f: decode_elementwise_feature(f, meta, n_cc_dims)
     )
-    decoded_df = pd.DataFrame(list(decoded))
-    df_imp = pd.concat([df_imp, decoded_df], axis=1)
-
-    def sub_group(row):
-        if (
-            row["space_name"] == "Strain-space"
-            or row["group_label"] == "Strain-space"
-            or row["cc_level"] == "Strain"
-        ):
-            return "Strain-space"
-        sub = row.get("cc_sublevel_name")
-        if isinstance(sub, str) and sub != "":
-            return sub
-        return row["group_label"]
-
-    df_imp["sub_group"] = df_imp.apply(sub_group, axis=1)
-
-    grouped = (
-        df_imp.groupby("sub_group")["importance_gain_norm"]
-        .sum()
-        .reset_index()
-        .sort_values("importance_gain_norm", ascending=False)
-    )
-
-    x = np.arange(len(grouped))
-    colors = [
-        PASTEL_PEACH if label == "Strain-space" else PASTEL_GREEN
-        for label in grouped["sub_group"]
-    ]
-
-    ax.bar(
-        x,
-        grouped["importance_gain_norm"],
-        color=colors,
-        edgecolor=BAR_EDGE_COLOR,
-        linewidth=BAR_EDGE_WIDTH,
-    )
-    ax.set_xticks(x)
-    ax.set_xticklabels(grouped["sub_group"], rotation=60, ha="right", fontsize=BAR_LABEL_SIZE)
-    ax.set_ylabel("Total normalized gain importance")
-
-    ax.set_title(
-        r"$\mathbf{B.}$" + "  CC sublevels and strain-space (HALO)",
-        fontsize=TITLE_SIZE,
-        loc="center",
-        pad=10,
-    )
-
-    # Vertical % labels to avoid collision
-    for i, v in enumerate(grouped["importance_gain_norm"]):
-        if v <= 0.015:
-            continue
-        ax.text(
-            i,
-            v + 0.003,
-            f"{v*100:.1f}%",
-            ha="center",
-            va="bottom",
-            fontsize=11,
-            rotation=90,
-        )
-
-    # ymax = grouped["importance_gain_norm"].max() * 1.5
-    # ax.set_ylim(0, ymax)
-    ax.set_ylim(0, 0.1)
-    # plt.subplots_adjust(bottom=0.10)
-    ax.margins(x=0.1)
-
-
-
-# ==========================
-# Panel C – grouped importance by CC top level + strain
-# ==========================
-
-def plot_panel_C(ax, df_importance, meta, n_cc_dims):
-    df_imp = df_importance.copy()
-    df_imp = df_imp[df_imp["feature"].str.startswith(("cos_elem_", "euc_elem_"))].copy()
-
-    decoded = df_imp["feature"].apply(
-        lambda f: decode_elementwise_feature(f, meta, n_cc_dims)
-    )
-    decoded_df = pd.DataFrame(list(decoded))
-    df_imp = pd.concat([df_imp, decoded_df], axis=1)
+    df_imp = pd.concat([df_imp, pd.DataFrame(list(decoded))], axis=1)
 
     def level_group(row):
         if (
@@ -358,10 +308,12 @@ def plot_panel_C(ax, df_importance, meta, n_cc_dims):
             or row["cc_level"] == "Strain"
         ):
             return "Strain-space"
-        if row["cc_level_name"] is not None:
+
+        if isinstance(row["cc_level_name"], str) and row["cc_level_name"]:
             return row["cc_level_name"]
+
         if row["space_name"] == "Chemical Checker":
-            return "Chemical Checker (unspecified)"
+            return "Chemical Checker"
         return "Unknown"
 
     df_imp["level_group"] = df_imp.apply(level_group, axis=1)
@@ -370,46 +322,119 @@ def plot_panel_C(ax, df_importance, meta, n_cc_dims):
         df_imp.groupby("level_group")["importance_gain_norm"]
         .sum()
         .reset_index()
-        .sort_values("importance_gain_norm", ascending=False)
     )
 
+    grouped = grouped[grouped["level_group"] != "Strain-space"].copy()
+
+    desired_order = ["Chemistry", "Targets", "Networks", "Cells", "Clinics"]
+    grouped["level_group"] = pd.Categorical(
+        grouped["level_group"], categories=desired_order, ordered=True
+    )
+    grouped = grouped.sort_values("level_group")
+
     x = np.arange(len(grouped))
-    colors = [
-        PASTEL_PEACH if label == "Strain-space" else PASTEL_GREEN
-        for label in grouped["level_group"]
-    ]
 
     ax.bar(
         x,
         grouped["importance_gain_norm"],
-        color=colors,
+        color=PASTEL_BLUE,
         edgecolor=BAR_EDGE_COLOR,
         linewidth=BAR_EDGE_WIDTH,
     )
+
     ax.set_xticks(x)
-    ax.set_xticklabels(grouped["level_group"], rotation=20, ha="right")
+    ax.set_xticklabels(grouped["level_group"], rotation=20, ha="right", fontsize=14)
     ax.set_ylabel("Total normalized gain importance")
+    ax.set_ylim(0, grouped["importance_gain_norm"].max() * 1.22)
 
     ax.set_title(
-        r"$\mathbf{C.}$" + "  CC level contributions to normalized gain (HALO)",
+        r"$\mathbf{B.}$  CC domain contributions",
         fontsize=TITLE_SIZE,
-        loc="center",
-        pad=10,
+        pad=8,
     )
 
-    for i, v in enumerate(grouped["importance_gain_norm"]):
+    for xi, yi in zip(x, grouped["importance_gain_norm"]):
+        ax.text(xi, yi + 0.004, f"{yi:.1%}", ha="center", va="bottom", fontsize=14)
+
+    clean_axis(ax)
+
+
+# ==========================
+# Panel C – grouped importance by CC top level + strain
+# ==========================
+
+def plot_panel_C(ax, df_importance, meta, n_cc_dims, top_n=10):
+    """
+    Panel C:
+    Top CC sublevels by normalized gain (HALO)
+    """
+
+    df_imp = df_importance.copy()
+    df_imp = df_imp[df_imp["feature"].str.startswith(("cos_elem_", "euc_elem_"))]
+
+    decoded = df_imp["feature"].apply(
+        lambda f: decode_elementwise_feature(f, meta, n_cc_dims)
+    )
+    df_imp = pd.concat([df_imp, pd.DataFrame(list(decoded))], axis=1)
+
+    def sub_group(row):
+        if (
+            row["space_name"] == "Strain-space"
+            or row["group_label"] == "Strain-space"
+            or row["cc_level"] == "Strain"
+        ):
+            return "Strain-space"
+
+        sub = row.get("cc_sublevel_name")
+        if isinstance(sub, str) and sub:
+            return sub
+
+        return row["group_label"]
+
+    df_imp["sub_group"] = df_imp.apply(sub_group, axis=1)
+
+    grouped = (
+        df_imp.groupby("sub_group")["importance_gain_norm"]
+        .sum()
+        .sort_values(ascending=False)
+    )
+
+    grouped = grouped[grouped.index != "Strain-space"].head(top_n)
+
+    plot_df = grouped.sort_values(ascending=True).reset_index()
+    plot_df.columns = ["sub_group", "importance_gain_norm"]
+    plot_df["sub_group"] = plot_df["sub_group"].map(short_label)
+
+    ax.barh(
+        plot_df["sub_group"],
+        plot_df["importance_gain_norm"],
+        color=PASTEL_GREEN,
+        edgecolor=BAR_EDGE_COLOR,
+        linewidth=BAR_EDGE_WIDTH,
+    )
+
+    xmax = plot_df["importance_gain_norm"].max()
+    ax.set_xlim(0, xmax * 1.16)
+
+    for y, v in enumerate(plot_df["importance_gain_norm"]):
         ax.text(
-            i,
-            v + 0.004,
-            f"{v*100:.1f}%",
-            ha="center",
-            va="bottom",
-            fontsize=ANNOT_SIZE,
+            v + xmax * 0.02,
+            y,
+            f"{v:.1%}",
+            va="center",
+            ha="left",
+            fontsize=12,
         )
 
-    ymax = grouped["importance_gain_norm"].max() + 0.06
-    ax.set_ylim(0, ymax)
+    ax.set_xlabel("Total normalized gain importance")
+    ax.set_title(
+        r"$\mathbf{C.}$  Top CC sublevels by normalized gain",
+        fontsize=TITLE_SIZE,
+        pad=8,
+    )
+    ax.tick_params(axis="y", labelsize=14)
 
+    clean_axis(ax)
 
 # ==========================
 # Panel D – CC vs SS (exp06b, M2)
@@ -444,26 +469,28 @@ def plot_panel_D(ax, cc_vs_ss_summary: pd.DataFrame):
     )
 
     ax.set_ylabel("Fraction of total gain importance")
-    ax.set_ylim(0, 1.15)
+    ax.set_ylim(0, 1.10)
 
-    for bar, group, v in zip(bars, plot_df["group"], plot_df["fraction_of_total_gain"]):
+    for bar, v in zip(bars, plot_df["fraction_of_total_gain"]):
         x = bar.get_x() + bar.get_width() / 2
-        y_text = v + 0.03 if v > 0 else 0.03
+        y_text = v + 0.025 if v > 0 else 0.025
         ax.text(
             x,
             y_text,
             f"{v*100:.1f}%",
             ha="center",
             va="bottom",
-            fontsize=ANNOT_SIZE,
+            fontsize=BAR_LABEL_SIZE,
         )
 
     ax.set_title(
-        r"$\mathbf{D.}$" + "  CC vs strain-space normalized gain (M2)",
+        r"$\mathbf{D.}$  CC vs strain-space gain",
         fontsize=TITLE_SIZE,
-        loc="center",
-        pad=10,
+        pad=8,
     )
+
+    clean_axis(ax)
+
 
 # ==========================
 # Assemble Fig 4
@@ -480,28 +507,26 @@ def main():
         )
     cc_vs_ss_summary = pd.read_csv(CC_VS_SS_SUMMARY_PATH).copy()
 
-    fig = plt.figure(figsize=(20, 11))
+    fig = plt.figure(figsize=(17, 10))
     gs = fig.add_gridspec(
-        2,
-        2,
-        width_ratios=[2.0, 1.9],
-        height_ratios=[1.3, 1.0],
-        wspace=0.40,
-        hspace=0.9,
-    )
+    2, 2,
+    width_ratios=[1.55, 1.00],
+    height_ratios=[1.00, 1.00],
+    wspace=0.35,
+    hspace=0.60,
+)
 
     axA = fig.add_subplot(gs[0, 0])
     axB = fig.add_subplot(gs[0, 1])
     axC = fig.add_subplot(gs[1, 0])
     axD = fig.add_subplot(gs[1, 1])
 
-    plot_panel_A(axA, df_imp_exp06d, meta, n_cc_dims, top_n=20)
+    plot_panel_A(axA, df_imp_exp06d, meta, n_cc_dims, top_n=10)
     plot_panel_B(axB, df_imp_exp06d, meta, n_cc_dims)
-    plot_panel_C(axC, df_imp_exp06d, meta, n_cc_dims)
+    plot_panel_C(axC, df_imp_exp06d, meta, n_cc_dims, top_n=10)
     plot_panel_D(axD, cc_vs_ss_summary)
 
-    fig.tight_layout()
-    fig.subplots_adjust(left=0.16, bottom=0.07)
+    fig.subplots_adjust(left=0.24, right=0.98, top=0.94, bottom=0.09)
 
     fig.savefig(FIG4_PNG, dpi=600)
     plt.close(fig)
