@@ -1,21 +1,30 @@
 #!/usr/bin/env python3
 """
-** Experiment: exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv_bliss005 (HALO-CV1) ** 
+Experiment: exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv_bliss005 (HALO-CV1)
 
-- task: binary classification using a refined Bliss-score threshold of ±0.05 to exclude neutral interactions.
-- feature_design: reduced elementwise similarity (from exp05d), CC-only
-- use_sspace: false (CC-only; no strain/sspace features)
-- nested_cv: true
-- OUTER CV: 5-fold, CV1-style (grouped by Drug Pair)
-- input: elementwise_features_filtered_cv1_cc_only.csv from exp05d
+Config
+- task: binary classification (synergy vs antagonism) with Bliss additivity cutoff ±0.05
+- feature_design: reduced elementwise similarity features (selected in exp05d), CC-only
+- use_sspace: false (no strain-space/S-space features)
+- cv_scheme: CV1 (drug-pair held-out)
+- outer_cv: 5-fold grouped CV by Drug Pair (StratifiedGroupKFold if available, else GroupKFold)
+- inner_cv: 3-fold grouped CV by Drug Pair for hyperparameter search (nested inside each outer fold)
+- model: LightGBM (binary objective), “synergy” treated as the positive class for ROC AUC
+- outputs:
+    - per-fold metrics and mean±std summaries (test + train)
+    - per-fold and aggregated confusion matrices
+    - per-fold and averaged feature importances (split + gain, with normalized gain)
+    - per-fold train/test prediction tables
+    - best hyperparameters (per-fold + best-overall) saved as JSON
+
+**Data integrity note:**
+All preprocessing (NA handling, dtype enforcement, column validation, etc.)
+was completed in the preprocessing scripts.
+This notebook assumes clean, validated input data.
 """
 
-import os
-import sys
 import json
 import itertools
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
@@ -24,8 +33,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from sklearn.model_selection import (
-    GroupShuffleSplit,
-    StratifiedKFold,
     GroupKFold,
     StratifiedGroupKFold,
 )
@@ -40,6 +47,7 @@ from sklearn.metrics import (
     precision_recall_fscore_support,
 )
 
+from halo.paths import MODEL_RESULTS
 
 def main():
     # ==========================
@@ -48,16 +56,9 @@ def main():
     SCHEME = "CV1"  # keep same scheme as exp03/exp06b for fair comparison
 
     # path to the reduced CC-only elementwise dataset produced by exp05d
-    filtered_path = Path(
-        "/home/hannie/cc_ml/models/results/"
-        "exp05d_lgbm_bin_nosspace_elementwise_featselect_bliss005/"
-        "elementwise_features_filtered_cv1_cc_only.csv"
-    )
+    filtered_path = MODEL_RESULTS / "exp05d_lgbm_bin_nosspace_elementwise_featselect_bliss005" / "elementwise_features_filtered_cv1_cc_only.csv"
 
-    out_dir = Path(
-        "/home/hannie/cc_ml/models/results/"
-        "exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv_bliss005"
-    )
+    out_dir = MODEL_RESULTS / "exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv_bliss005"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(

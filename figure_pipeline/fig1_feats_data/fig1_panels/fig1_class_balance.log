@@ -1,0 +1,10 @@
+3-class Bliss label distribution (before binarization)
+------------------------------------------------------
+CSV_PATH: /home/hany/projects/cc_ml/HALO_repo/data/d_processed/combinations_combined.csv
+ADDITIVITY_CUTOFF: 0.05
+Total samples: 3160
+
+class_label	count	proportion_percent
+antagonism	1498	47.4051
+neutral	184	5.8228
+synergy	1478	46.7722

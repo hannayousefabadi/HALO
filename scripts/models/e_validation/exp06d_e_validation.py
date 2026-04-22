@@ -30,15 +30,11 @@ Expected external base file (chan_cleaned_data.csv) columns:
 """
 
 import json
-from pathlib import Path
-import sys
-
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
 import matplotlib
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 
 from sklearn.model_selection import StratifiedGroupKFold, GroupKFold
 from sklearn.preprocessing import LabelEncoder
@@ -52,45 +48,31 @@ from sklearn.metrics import (
     classification_report,
 )
 
-# make pipeline importable for FeatureMapper
-sys.path.append("/home/hany/projects/cc_ml/pipeline")
-from feature_mapper.feature_mapper import FeatureMapper
-
-
 # ==========================
-# 0) Basic config
+# Paths and Basic config
 # ==========================
+
+from halo.paths import MODEL_RESULTS, INTERIM, CC_FEATURES
+from halo.mappers.feature_mapper import FeatureMapper
+
 
 SCHEME = "CV1"
 
 # Training features (same as original EXP06d)
-filtered_path = Path(
-    "/home/hany/projects/cc_ml/models/results/"
-    "exp05d_lgbm_bin_nosspace_elementwise_featselect_bliss005/"
-    "elementwise_features_filtered_cv1_cc_only.csv"
-)
+filtered_path = MODEL_RESULTS / "exp05d_lgbm_bin_nosspace_elementwise_featselect_bliss005" / "elementwise_features_filtered_cv1_cc_only.csv"
 
 # Original EXP06d result dir (where best_params_cv1.json lives)
-exp06d_out = Path(
-    "/home/hany/projects/cc_ml/models/results/"
-    "exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv_bliss005"
-)
+exp06d_out = MODEL_RESULTS / "exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv_bliss005"
 
-ext_out = Path(
-    "/home/hany/projects/cc_ml/models/results/"
-    "e_validation"
-) / "external_eval_chandrasekaran"
+ext_out = MODEL_RESULTS / "e_validation" / "external_eval_chandrasekaran"
 ext_out.mkdir(parents=True, exist_ok=True)
 
 best_params_path = exp06d_out / "best_params_cv1.json"
 
-external_base_path = Path(
-    "/home/hany/projects/cc_ml/pipeline/preprocessing/combinations_data/chan_cleaned_data.csv"
-)
+external_base_path = INTERIM / "source_d_chandrasekaran" / "chandrasekaran_cleaned_data.csv"
 
 # Path to CC single-compound features (same as EXP05d)
-base_dir = Path("/home/hany/projects/cc_ml/pipeline/preprocessing/data_to_use")
-cc_path = base_dir / "features_25_levels_into_1.csv"
+cc_path = CC_FEATURES / "cc_features_concat_25x128.csv"
 
 
 # ==========================

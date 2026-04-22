@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-** Experiment: exp06_novel_pairs **
+Experiment: exp06_novel_pairs 
 
-- Trains the final PHO-noStrain model (exp06d config) on the full labeled dataset.
+- Trains the final HALO-CV1 model (exp06d config) on the full labeled dataset.
 - Generates novel drug-pair predictions by:
     * taking all possible pairs among the unique compounds (by Inchikey),
     * excluding pairs that appear in the labeled training set,
@@ -11,49 +11,25 @@
     * top 40 novel pairs ranked by P(synergy)
     * top 40 novel pairs ranked by P(antagonism)
 """
-
 import json
 from pathlib import Path
-import sys, os
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
 from joblib import dump
 from sklearn.preprocessing import LabelEncoder
-sys.path.append('/home/hany/projects/cc_ml/pipeline')
-from feature_mapper.feature_mapper import FeatureMapper
 
+from pathlib import Path
+from halo.paths import MODEL_RESULTS, CC_FEATURES
+from halo.mappers.feature_mapper import FeatureMapper
 
-BASE_DIR = Path("/home/hany/projects/cc_ml/models/results")
+FILTERED_PATH = MODEL_RESULTS / "exp05d_lgbm_bin_nosspace_elementwise_featselect_bliss005" / "elementwise_features_filtered_cv1_cc_only.csv"
+ALLPAIRS_PATH = MODEL_RESULTS / "exp05d_lgbm_bin_nosspace_elementwise_featselect_bliss005" / "elementwise_features_filtered_all_possible_pairs_cv1_cc_only.csv"
 
-FILTERED_PATH = (
-    BASE_DIR
-    / "exp05d_lgbm_bin_nosspace_elementwise_featselect_bliss005"
-    / "elementwise_features_filtered_cv1_cc_only.csv"
-)
+BEST_PARAMS_PATH = MODEL_RESULTS / "exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv_bliss005" / "best_params_cv1.json"
+CC_FEATURES_PATH = CC_FEATURES / "cc_features_concat_25x128.csv"
 
-ALLPAIRS_PATH = (
-    BASE_DIR
-    / "exp05d_lgbm_bin_nosspace_elementwise_featselect_bliss005"
-    / "elementwise_features_filtered_all_possible_pairs_cv1_cc_only.csv"
-)
-
-BEST_PARAMS_PATH = (
-    BASE_DIR
-    / "exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv_bliss005"
-    / "best_params_cv1.json"
-)
-
-CC_FEATURES_PATH = Path(
-    "/home/hany/projects/cc_ml/pipeline/preprocessing/data_to_use/features_25_levels_into_1.csv"
-) 
-
-OUT_DIR = (
-    BASE_DIR
-    / "e_validation"
-    / "novel_pairs"
-)
-
+OUT_DIR = MODEL_RESULTS / "e_validation" / "novel_pairs"
 
 # ==========================
 # 1) Load and prep training data
@@ -157,7 +133,7 @@ def train_final_model(X, y_enc, le, feat_cols, best_params_path: Path):
         **best_params,
     )
     m_final.fit(X, y_enc)
-    print("\nTrained final PHO-noStrain model on full labeled dataset.")
+    print("\nTrained final HALO-CV1 model on full labeled dataset.")
 
     # Determine which class index corresponds to "synergy"
     synergy_code = le.transform(["synergy"])[0]
@@ -172,17 +148,17 @@ def save_artifacts(model, le, feat_cols, out_dir: Path):
 
     # Save LightGBM Booster as text model
     booster = model.booster_
-    booster_path = out_dir / "model_final_pho_nostrain_cv1.txt"
+    booster_path = out_dir / "model_final_halo_cv1.txt"
     booster.save_model(str(booster_path))
     print("Saved LightGBM booster to:", booster_path)
 
     # Save sklearn-wrapper model as joblib
-    model_path = out_dir / "model_final_pho_nostrain_cv1.joblib"
+    model_path = out_dir / "model_final_halo_cv1.joblib"
     dump(model, model_path)
     print("Saved sklearn model to:", model_path)
 
     # Save label encoder
-    le_path = out_dir / "label_encoder_pho_nostrain_cv1.joblib"
+    le_path = out_dir / "label_encoder_halo_cv1.joblib"
     dump(le, le_path)
     print("Saved label encoder to:", le_path)
 
@@ -332,7 +308,7 @@ def predict_novel_pairs(
     agg_syn = agg.sort_values("p_synergy", ascending=False).reset_index(drop=True)
     top_syn = agg_syn.head(top_k).copy()
 
-    top_syn_path = out_dir / f"novel_pairs_top{top_k}_synergy_pho_nostrain.csv"
+    top_syn_path = out_dir / f"novel_pairs_top{top_k}_synergy_halo_cv1.csv"
     top_syn.to_csv(top_syn_path, index=False)
     print("Saved top", top_k, "novel synergistic pairs to:", top_syn_path)
 
@@ -349,7 +325,7 @@ def predict_novel_pairs(
     agg_ant = agg.sort_values("p_antagonism", ascending=False).reset_index(drop=True)
     top_ant = agg_ant.head(top_k).copy()
 
-    top_ant_path = out_dir / f"novel_pairs_top{top_k}_antagonism_pho_nostrain.csv"
+    top_ant_path = out_dir / f"novel_pairs_top{top_k}_antagonism_halo_cv1.csv"
     top_ant.to_csv(top_ant_path, index=False)
     print("Saved top", top_k, "novel antagonistic pairs to:", top_ant_path)
 

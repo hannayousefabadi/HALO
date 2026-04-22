@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate Figure 1, Panel B: Dataset statistics after curation.
+Generate Figure 1:
 
 Outputs:
 - fig1B_counts.log
@@ -10,30 +10,27 @@ Outputs:
 - fig1B_class_balance.log
 - fig1B_pairs_per_strain.log
 """
-
-import sys
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-CSV_PATH = "/home/hany/projects/cc_ml/pipeline/preprocessing/data_to_use/combinations_combined.csv"
-sys.path.append("/home/hany/projects/cc_ml/pipeline")
+from pathlib import Path
+from halo.paths import PROCESSED, FIGURE_PIPELINE
 
-from shared_utils.data_io import classify_interaction
+CSV_PATH = PROCESSED  / "halo_training_dataset.csv"
+FIG_OUT_BASE = FIGURE_PIPELINE / "fig1_feats_data" / "fig1_panels" / "fig1"
+FIG_OUT_BASE.parent.mkdir(parents=True, exist_ok=True)
+
+from halo.shared_utils.data_io import classify_interaction
 
 
 DRUG_A_COL = "Drug A"
 DRUG_B_COL = "Drug B"
 STRAIN_COL = "Strain"
-SPECIES_COL = "Species"
+SPECIES_COL = "Specie"
 BLISS_COL = "Bliss Score"
 
 CLASS_COL = "Interaction_3class"
-
-
-FIG_OUT_BASE = "/home/hany/projects/cc_ml/plots/fig1_feats_data/fig1B"
 
 DPI = 600
 ADDITIVITY_CUTOFF = 0.05  
@@ -59,7 +56,7 @@ def italicize(text: str) -> str:
 
 
 def main():
-    df = pd.read_csv(CSV_PATH)
+    df = pd.read_csv(CSV_PATH).copy()
 
     df[CLASS_COL] = df[BLISS_COL].apply(
         lambda x: classify_interaction(x, additivity_cutoff=ADDITIVITY_CUTOFF)

@@ -1,35 +1,43 @@
 #!/usr/bin/env python3
 """
-** Experiment: exp09b_lgbm_bin_sspace_elementwise_reduced_simplecv_bliss005 **
+Experiment: exp09d_lgbm_bin_nosspace_elementwise_reduced_simplecv_bliss005 (HALO-Base, CC-only, standard CV)
 
-- task: binary classification using a refined Bliss-score threshold of ±0.05 to exclude neutral interactions
-- feature_design: reduced elementwise similarity (exp05b)
-- use_sspace: true (already baked into features)
-- nested_cv: false (simple CV, intentionally leaky)
-- purpose: estimate the "upper bound" accuracy achievable with selected features
+Config
+- task: binary classification (synergy vs antagonism) after excluding neutral interactions via Bliss cutoff ±0.05
+- feature_design: reduced elementwise similarity features (selected in exp05d), CC-only
+- use_sspace: false (no strain / S-space features; CC-derived elementwise features only)
+- cv_scheme: standard stratified split + standard stratified CV (no grouping by drug pair)
+- nested_cv: false (intentionally non-nested; optimistic baseline / “upper-bound” under lenient validation)
+- purpose: compare against group-aware HALO CV schemes by showing performance when pair-level leakage is allowed
+
+Training / selection
+- data: reduced CC-only feature matrix from exp05d with binary labels (bliss=±0.05 filtering already applied upstream)
+- outer split: single stratified train/test split (80/20)
+- hyperparameter tuning: RandomizedSearchCV with 5-fold StratifiedKFold on the training split
+- model: LightGBM classifier (objective="binary"); randomized search scored by F1
+
+Outputs
+- console: best hyperparameters, test-set classification metrics, and an overfitting report (via shared_utils)
+- no grouped CV, no nested outer-fold aggregation, and no feature-importance artifacts (baseline comparator)
+
+**Data integrity note:**
+All preprocessing (NA handling, dtype enforcement, column validation, etc.)
+was completed in the preprocessing scripts.
+This notebook assumes clean, validated input data.
 """
 
-import os
-import sys
-from pathlib import Path
-import numpy as np
-import pandas as pd
 
+import pandas as pd
 from sklearn.model_selection import (
     StratifiedKFold,
     train_test_split,
     RandomizedSearchCV
 )
 from sklearn.preprocessing import LabelEncoder
-from sklearn.metrics import (
-    accuracy_score, f1_score, roc_auc_score,
-    classification_report, confusion_matrix
-)
 import lightgbm as lgb
 
-# Make pipeline importable
-sys.path.append("/home/hannie/cc_ml/pipeline")
-from shared_utils.metrics import classification_metrics, overfitting_report
+from halo.paths import MODEL_RESULTS
+from halo.shared_utils.metrics import classification_metrics, overfitting_report
 
 
 def main():
@@ -38,11 +46,7 @@ def main():
     # ==========================
     # 1) Load reduced feature file from exp05
     # ==========================
-    reduced_path = Path(
-        "/home/hannie/cc_ml/models/results/"
-        "exp05d_lgbm_bin_nosspace_elementwise_featselect_bliss005/"
-        "elementwise_features_filtered_cv1_cc_only.csv"
-    )
+    reduced_path = MODEL_RESULTS / "exp05d_lgbm_bin_nosspace_elementwise_featselect_bliss005" / "elementwise_features_filtered_cv1_cc_only.csv"
 
     if not reduced_path.exists():
         raise FileNotFoundError(f"Reduced feature file not found: {reduced_path}")

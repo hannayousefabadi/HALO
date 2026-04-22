@@ -2,22 +2,38 @@
 """
 Experiment: exp02_lgbm_bin_sspace_concat_nestedcv
 
-- task: binary classification
-- feature_design: concatenation
-- use_sspace: true
-- nested_cv: true
+Config
+- model: LightGBM (LGBMClassifier)
+- task: binary classification (synergy vs antagonism)
+- feature_design: concatenation (DrugA + DrugB feature vectors)
+- sspace: enabled (strain-space features merged onto CC features per drug via `inchikey`)
+- nested_cv: enabled
+- cv_scheme: CV1 (outer split held out by Drug Pair; optional CV2 supported by `SCHEME`)
+- bliss neutrality cutoff: ±0.1 (labels are assumed to be created upstream using this cutoff)
 
-**Data integrity note:**  
-All preprocessing (NA handling, dtype enforcement, column validation, etc.)
-was completed in the preprocessing scripts.  
-This notebook assumes clean, validated input data.
+Nested CV procedure
+- Outer split:
+  - CV1: GroupShuffleSplit with groups = Drug Pair (80% train / 20% test)
+  - CV2 (optional): disjoint holdout by Strain + Drug Pair with cross-edge drops
+- Inner tuning (on outer-train only):
+  - StratifiedGroupKFold (fallback GroupKFold), groups = Drug Pair
+  - random search over 32 sampled hyperparameter configs
+  - selection metric: mean validation accuracy across inner folds
+- Final fit: refit best model on full outer-train, evaluate once on outer-test
+
+Data integrity note
+All preprocessing (missing values, dtypes, column validation, and label construction from Bliss using the
+±0.1 cutoff) is performed upstream in preprocessing notebooks/scripts. This script assumes the processed
+inputs are clean and consistent and that `Interaction Type` already reflects that cutoff.
+
+Class encoding
+Labels are encoded with LabelEncoder on {antagonism, synergy}, yielding antagonism=0 and synergy=1
+(alphabetical). Evaluation treats synergy as the positive class for ROC-AUC by explicitly selecting the
+synergy probability column and binarizing y_test accordingly.
 """
 
-import os
-import sys
-import itertools
-from pathlib import Path
 
+import itertools
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
@@ -27,7 +43,6 @@ import matplotlib.pyplot as plt
 
 from sklearn.model_selection import (
     GroupShuffleSplit,
-    StratifiedKFold,
     GroupKFold,
     StratifiedGroupKFold,
 )
@@ -42,24 +57,22 @@ from sklearn.metrics import (
     precision_recall_fscore_support
 )
 
-# ----- make pipeline importable -----
-sys.path.append("/home/hannie/cc_ml/pipeline")
-from feature_mapper.feature_mapper import FeatureMapper 
+from halo.paths import CC_FEATURES, SS_FEATURES, PROCESSED, MODEL_RESULTS
+from halo.mappers.feature_mapper import FeatureMapper 
 
 
 def main():
     # ==========================
-    # config
+    # 0) Config
     # ==========================
     SCHEME = "CV1"  # or "CV2"
 
-    base_dir = Path("/home/hannie/cc_ml/pipeline/preprocessing/data_to_use")
-    cc_path = base_dir / "features_25_levels_into_1.csv"
-    ss_path = base_dir / "sspace.csv"
-    combos_path = base_dir / "combinations_combined.csv"
+    cc_path = CC_FEATURES / "cc_features_concat_25x128.csv"
+    ss_path = SS_FEATURES / "sspace.csv"
+    combos_path = PROCESSED / "halo_training_dataset.csv"
 
     # where to store plots / outputs
-    out_dir = Path("/home/hannie/cc_ml/models/results/exp02_lgbm_bin_sspace_concat_nestedcv")
+    out_dir = MODEL_RESULTS / "exp02_lgbm_bin_sspace_concat_nestedcv"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print("\n=== EXP02 ===\n")
@@ -67,7 +80,7 @@ def main():
     print("Output dir:", out_dir)
 
     # ==========================
-    # load data
+    # 1) load data
     # ==========================
     cc_df = pd.read_csv(cc_path).copy()
     ss_df = pd.read_csv(ss_path).copy()
@@ -92,7 +105,7 @@ def main():
     print(df["Interaction Type"].value_counts())
 
     # ==========================
-    # feature columns
+    # 2) Feature columns
     # ==========================
     drop_cols = [
         "Drug A",
@@ -121,7 +134,7 @@ def main():
     rng = np.random.default_rng(42)
 
     # ==========================
-    # outer CV (CV1 / CV2)
+    # 3) Outer CV (CV1 / CV2)
     # ==========================
     # CV1 -> held-out by `Drug Pair`
     def make_split_cv1(verbose=True):
@@ -348,7 +361,7 @@ def main():
         raise ValueError("SCHEME must be 'CV1' or 'CV2'")
 
     # ==========================
-    # inner CV (done inside CV1 or CV2)
+    # 4) Inner CV (done inside CV1 or CV2)
     # ==========================
 
     # quiet LightGBM logger
@@ -436,7 +449,7 @@ def main():
     print("Best inner-CV ACC:", round(best_acc, 3), "\nBest params:", best_params)
 
     # ==========================
-    # final refit on outer-train
+    # 5) Final refit on outer-train
     # ==========================
     m_final = lgb.LGBMClassifier(
         objective="binary",
@@ -451,7 +464,7 @@ def main():
     pos_idx = np.flatnonzero(m_final.classes_ == synergy_code)[0]
 
     # ==========================
-    # final evaluation on held-out test
+    # 6) Final evaluation on held-out test
     # ==========================
     p_te = m_final.predict_proba(X_te)[:, pos_idx]
     y_pred = (p_te >= 0.5).astype(int)
@@ -504,7 +517,7 @@ def main():
     print(f"f1_syn={f1_syn:.4f}")
 
     # ==========================
-    # overfitting check
+    # 7) Overfitting check
     # ==========================
     p_tr = m_final.predict_proba(X_tr)[:, pos_idx]
     y_tr_pred = (p_tr >= 0.5).astype(int)
@@ -530,7 +543,7 @@ def main():
     )
 
     # ==========================
-    # confusion matrix plot → save to file
+    # 8) Confusion matrix plot → save to file
     # ==========================
     order = ["antagonism", "synergy"]
     order_idx = le.transform(order)

@@ -16,16 +16,13 @@ __pycache__/
 __pycache__/
 *.pyc
 
-# latex build junk
+<<<<<<< HEAD
+# latex build junk (global)
 *.aux
 *.fdb_latexmk
 *.fls
 *.log
 *.synctex.gz
-
-
-# paper related
-paper/
 
 # RESULTS (contains mostly large files)
 results/**

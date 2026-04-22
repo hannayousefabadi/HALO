@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
 """
-make_fig4.py
+Generate Figure 4:
 
-Figure 4 – External validation sanity check on Chandrasekaran et al. dataset (EXP06d).
+External validation sanity check on Chandrasekaran et al. dataset (EXP06d).
 using exp06d LightGBM model (CC-only, elementwise features).
 
-Outputs:
-- Fig4.png
-- Fig4.pdf
+Panel outputs:
+- Fig4_panelB.png
+- Fig4_panelC.png
+- Fig4_panelD.png
 """
-
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -23,15 +22,11 @@ from sklearn.metrics import roc_auc_score, average_precision_score
 # ==========================
 # Paths
 # ==========================
+from halo.paths import FIGURE_PIPELINE, MODEL_RESULTS
 
-BASE_DIR = Path(
-    "/home/hany/projects/cc_ml/models/results/"
-    "e_validation/"
-    "external_eval_chandrasekaran"
-)
-OUT_DIR = Path(
-    "/home/hany/projects/cc_ml/plots/fig4_e_validation"
-)
+BASE_DIR = MODEL_RESULTS / "e_validation" / "external_eval_chandrasekaran"
+OUT_DIR = FIGURE_PIPELINE / "fig4_e_validation" / "fig4_panels"
+OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 roc_path = BASE_DIR / "external_roc_curve_chandrasekaran.csv"
 pr_path = BASE_DIR / "external_pr_curve_chandrasekaran.csv"
@@ -58,10 +53,10 @@ CONF_CMAP = LinearSegmentedColormap.from_list(
 
 
 def load_data():
-    roc_df = pd.read_csv(roc_path)
-    pr_df = pd.read_csv(pr_path)
-    cm_df = pd.read_csv(cm_path, index_col=0)
-    pred_df = pd.read_csv(pred_path)
+    roc_df = pd.read_csv(roc_path).copy()
+    pr_df = pd.read_csv(pr_path).copy()
+    cm_df = pd.read_csv(cm_path, index_col=0).copy()
+    pred_df = pd.read_csv(pred_path).copy()
 
     # allow both naming variants for alpha
     alpha_col = None
@@ -224,17 +219,14 @@ def make_fig4():
     fig.tight_layout()
     fig.subplots_adjust(
         hspace=0.6, wspace=0.4,
-        left=0.10, right=0.80,   # leave space on the right for legend
+        left=0.10, right=0.80,  
         top=0.94, bottom=0.09
     )
 
-    out_png = OUT_DIR / "Fig4.png"
-    out_pdf = OUT_DIR / "Fig4.pdf"
-    fig.savefig(out_png, dpi=600)
-    fig.savefig(out_pdf)
-    print("Saved combined Fig.4 to:")
-    print("  ", out_png)
-    print("  ", out_pdf)
+    # out_png = OUT_DIR / "Fig4.png"
+    # fig.savefig(out_png, dpi=600)
+    # print("Saved combined Fig.4 to:")
+    # print("  ", out_png)
 
     # =======================================================
     # Save PANELS B, C, D independently
@@ -252,10 +244,8 @@ def make_fig4():
     axB.legend(frameon=False)
     axB.grid(alpha=0.2, color=warm_gray)
     figB.tight_layout()
-    out_png_B = OUT_DIR / "Fig4_panelB_ROC.png"
-    out_pdf_B = OUT_DIR / "Fig4_panelB_ROC.pdf"
+    out_png_B = OUT_DIR / "fig4_panelB_ROC.png"
     figB.savefig(out_png_B, dpi=600)
-    figB.savefig(out_pdf_B)
     plt.close(figB)
 
     # ----- Panel C: PR curve -----
@@ -271,10 +261,8 @@ def make_fig4():
     axC.legend(frameon=False)
     axC.grid(alpha=0.2, color=warm_gray)
     figC.tight_layout()
-    out_png_C = OUT_DIR / "Fig4_panelC_PR.png"
-    out_pdf_C = OUT_DIR / "Fig4_panelC_PR.pdf"
+    out_png_C = OUT_DIR / "fig4_panelC_PR.png"
     figC.savefig(out_png_C, dpi=600)
-    figC.savefig(out_pdf_C)
     plt.close(figC)
 
     # ----- Panel D: scatter + confusion labels -----
@@ -308,10 +296,8 @@ def make_fig4():
 
     axD.grid(alpha=0.2, color=warm_gray)
     figD.tight_layout()
-    out_png_D = OUT_DIR / "Fig4_panelD_scatter_CM.png"
-    out_pdf_D = OUT_DIR / "Fig4_panelD_scatter_CM.pdf"
+    out_png_D = OUT_DIR / "fig4_panelD_scatter_CM.png"
     figD.savefig(out_png_D, dpi=600)
-    figD.savefig(out_pdf_D)
     plt.close(figD)
 
     print("Saved independent panels:")

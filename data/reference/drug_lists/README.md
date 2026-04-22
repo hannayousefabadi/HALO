@@ -23,10 +23,8 @@ Mapping table for the Cacace et al. dataset.
 ### `alternative_names.csv`
 Table of alternative / synonymous drug names.
 
-- Maps multiple generic names, aliases, or spelling variants
-  to a **single canonical identifier (InChIKey)**.
-- Used to resolve naming inconsistencies across datasets
-  and during curation of antibacterial drug lists.
+- Maps multiple generic names, aliases, or spelling variants to the same **InChIKey**.
+- Used to normalize drug names across datasets where the same compound appears under different names.
 
 ---
 
@@ -45,7 +43,8 @@ Curated list of antibacterial drugs.
 ### `list_antibacterial_for_cc.csv`
 Deduplicated antibacterial list for Chemical Checker queries.
 
-- Derived from `list_antibacterial.csv` using `alternative_names.csv`.
+- Derived from `list_antibacterial.csv` by de-duplicating by InChIKey 
+  in ` 00_curate_antibacterial_references.ipynb`.
 - Each compound appears **only once**, with a unique identifier.
 - Used specifically to fetch Chemical Checker features,
   which require unique compound identifiers.

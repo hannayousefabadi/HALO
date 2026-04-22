@@ -1,0 +1,15 @@
+Unique drug pairs per strain
+----------------------------
+CSV_PATH: /home/hany/projects/cc_ml/HALO_repo/data/d_processed/combinations_combined.csv
+
+strain_pretty	unique_pairs
+Escherichia coli BW25113	481
+Escherichia coli IAI1	481
+Salmonella Typhimurium LT2	377
+Salmonella Typhimurium 14028	377
+Pseudomonas aeruginosa PAO1	291
+Pseudomonas aeruginosa PA14	291
+Staphylococcus aureus DSM 20231	258
+Staphylococcus aureus Newman	234
+Streptococcus pneumoniae	209
+Bacillus subtilis	161

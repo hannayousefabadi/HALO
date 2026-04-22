@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Fig 3 – Feature analysis for HALO-CV1 (exp06d) and CC vs SS (HALO-S-CV1, exp06b)
+Generate Figure 3:
 
-Panels:
+Feature analysis for HALO-CV1 (exp06d) and CC vs SS (HALO-S-CV1, exp06b)
+
+Output panels:
 - A: Top-20 features by gain-based importance (HALO-CV1, exp06d)
 - B: Grouped importance (CC sublevels + strain-space) – HALO-CV1
 - C: Grouped importance by CC top level + strain-space – HALO-CV1
 - D: CC vs strain-space contributions – HALO-S-CV1 (exp06b)
 """
-
-from pathlib import Path
 
 import pandas as pd
 import numpy as np
@@ -18,34 +18,25 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 # ==========================
-# 0) Paths
+# Paths
 # ==========================
+from pathlib import Path
+from halo.paths import MODEL_RESULTS, FEATURES, FIGURES
 
-RESULT_DIR_EXP06D = Path(
-    "/home/hany/projects/cc_ml/models/results/"
-    "exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv_bliss005"
-)
-
-RESULT_DIR_EXP06B = Path(
-    "/home/hany/projects/cc_ml/models/results/"
-    "exp06b_lgbm_bin_sspace_elementwise_reduced_nestedcv_bliss005"
-)
-
-PLOT_DIR = Path("/home/hany/projects/cc_ml/plots/fig3_feat_analysis")
-PLOT_DIR.mkdir(parents=True, exist_ok=True)
-
+RESULT_DIR_EXP06D = MODEL_RESULTS / "exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv_bliss005"
 FI_PATH_EXP06D = RESULT_DIR_EXP06D / "feature_importances_cv1.csv"
+
+RESULT_DIR_EXP06B = MODEL_RESULTS / "exp06b_lgbm_bin_sspace_elementwise_reduced_nestedcv_bliss005"
 CC_VS_SS_SUMMARY_PATH = RESULT_DIR_EXP06B / "cc_vs_ss_importance_summary.csv"
 
-FIG3_PNG = PLOT_DIR / "Fig3.png"
-FIG3_PDF = PLOT_DIR / "Fig3.pdf"
+PLOT_DIR = FIGURES / "main"
+PLOT_DIR.mkdir(parents=True, exist_ok=True)
+FIG3_PNG = PLOT_DIR / "fig3.png"
 
-FEATURE_META_PATH = Path(
-    "/home/hany/projects/cc_ml/pipeline/feature_mapper/feature_metadata_cc_s_full.csv"
-)
+FEATURE_META_PATH = FEATURES / "feature_metadata_cc_s_full.csv"
 
 # ==========================
-# 0b) Global style + palette
+# Global style + palette
 # ==========================
 
 TITLE_SIZE = 14
@@ -72,14 +63,14 @@ BAR_EDGE_COLOR = "black"
 BAR_EDGE_WIDTH = 0.4
 
 # ==========================
-# 1) Load data
+# Load data
 # ==========================
 
 def load_importances(fi_path: Path) -> pd.DataFrame:
     if not fi_path.exists():
         raise FileNotFoundError(fi_path)
 
-    df = pd.read_csv(fi_path)
+    df = pd.read_csv(fi_path).copy()
 
     if "importance_gain_norm" not in df.columns:
         total_gain = df["importance_gain"].sum()
@@ -100,7 +91,7 @@ def load_feature_meta():
     if not FEATURE_META_PATH.exists():
         raise FileNotFoundError(FEATURE_META_PATH)
 
-    meta = pd.read_csv(FEATURE_META_PATH)
+    meta = pd.read_csv(FEATURE_META_PATH).copy()
 
     if "original_name" not in meta.columns:
         raise ValueError("feature_metadata_cc_s_full.csv must have 'original_name' column")
@@ -116,7 +107,7 @@ def load_feature_meta():
 
 
 # ==========================
-# 2) Decode elementwise features using metadata
+# Decode elementwise features using metadata
 # ==========================
 
 def decode_elementwise_feature(feat_name: str, meta: pd.DataFrame, n_cc_dims: int):
@@ -207,7 +198,7 @@ def decode_elementwise_feature(feat_name: str, meta: pd.DataFrame, n_cc_dims: in
 
 
 # ==========================
-# 3) Panel A – top-20 features
+# Panel A – top-20 features
 # ==========================
 
 def plot_panel_A(ax, df_importance, meta, n_cc_dims, top_n=20):
@@ -266,7 +257,7 @@ def plot_panel_A(ax, df_importance, meta, n_cc_dims, top_n=20):
     # plt.subplots_adjust(left=0.4)
 
 # ==========================
-# 4) Panel B – grouped importance (sublevels + strain)
+# Panel B – grouped importance (sublevels + strain)
 # ==========================
 
 def plot_panel_B(ax, df_importance, meta, n_cc_dims):
@@ -347,7 +338,7 @@ def plot_panel_B(ax, df_importance, meta, n_cc_dims):
 
 
 # ==========================
-# 5) Panel C – grouped importance by CC top level + strain
+# Panel C – grouped importance by CC top level + strain
 # ==========================
 
 def plot_panel_C(ax, df_importance, meta, n_cc_dims):
@@ -421,7 +412,7 @@ def plot_panel_C(ax, df_importance, meta, n_cc_dims):
 
 
 # ==========================
-# 6) Panel D – CC vs SS (exp06b, SynChekcer-CV1s)
+# Panel D – CC vs SS (exp06b, HALO-S-CV1)
 # ==========================
 
 def plot_panel_D(ax, cc_vs_ss_summary: pd.DataFrame):
@@ -474,7 +465,7 @@ def plot_panel_D(ax, cc_vs_ss_summary: pd.DataFrame):
 
 
 # ==========================
-# 7) Assemble Fig 3
+# Assemble Fig 3
 # ==========================
 
 def main():
@@ -486,7 +477,7 @@ def main():
             f"CC vs SS summary not found: {CC_VS_SS_SUMMARY_PATH} "
             "(run exp06b_cc_vs_ss_analysis.py first)."
         )
-    cc_vs_ss_summary = pd.read_csv(CC_VS_SS_SUMMARY_PATH)
+    cc_vs_ss_summary = pd.read_csv(CC_VS_SS_SUMMARY_PATH).copy()
 
     fig = plt.figure(figsize=(20, 11))
     gs = fig.add_gridspec(
@@ -512,11 +503,9 @@ def main():
     fig.subplots_adjust(left=0.16, bottom=0.07)
 
     fig.savefig(FIG3_PNG, dpi=600)
-    fig.savefig(FIG3_PDF)
     plt.close(fig)
 
     print("Saved Fig 3 PNG to:", FIG3_PNG)
-    print("Saved Fig 3 PDF to:", FIG3_PDF)
 
 
 if __name__ == "__main__":

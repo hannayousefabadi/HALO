@@ -20,9 +20,9 @@ Follow the installation instructions provided by the ChemicalChecker authors, in
 
 This directory contains two files related to ChemicalChecker usage in this project:
 
-- `fetch_cc_features.py`  
+- `00_fetch_cc_features.py`  
   Script used to fetch **original ChemicalChecker (CC) features** via the CC API.  
-  The output is stored in `data/features/chemicalchecker_cc/chemicalchecker_data.csv`.
+  The output is stored in `data/features/chemicalchecker_cc/cc_features_raw.csv`.
 
   This file has the following structure:
   - rows: drugs (indexed by InChIKey)
@@ -30,13 +30,29 @@ This directory contains two files related to ChemicalChecker usage in this proje
     - `level`: CC sublevel identifier (`A1`–`E5`, 25 total)
     - `dim_0` … `dim_127`: 128-dimensional signature for that level
 
-  From this file, level-wise CC features are assembled into:
-  - `features_25_levels_into_1.csv`: concatenation of all 25 CC sublevels (A1–E5)
-  - `features_15_levels_into_1.csv`: concatenation of CC levels A–C (15 first sublevels)
-  
+- `01_prepare_cc_features.ipynb`
+  Notebook that **filters and reshapes** the raw CC export (`cc_features_raw.csv`) into fixed-length feature tables used by the HALO models.
+
+  What it does:
+  - Drops rows with missing values in critical fields (`drug`, `inchikey`, `level`, and the 128 signature dimensions).
+  - Keeps only compounds with **complete coverage** of the required CC sublevels:
+    - **25/25 sublevels** for the full CC feature set (A1–E5)
+    - **15/15 sublevels** for the reduced CC feature set (A1–C5)
+  - Concatenates 128-d vectors across sublevels to produce one vector per compound.
+
+  Outputs:
+  - `cc_features_concat_25x128.csv`  
+    One row per compound; **3200-d** feature vector (25 × 128), concatenated in sublevel order **A1 → E5**.
+  - `cc_features_concat_15x128.csv`  
+    One row per compound; **1920-d** feature vector (15 × 128), concatenated in sublevel order **A1 → C5**.
+
+  Notes:
+  - InChIKeys are standardized to **uppercase**.
+  - These files are treated as **reference feature inputs** for modeling (they are not learned artifacts).
+
 - `cc_config.json`  
 Reference ChemicalChecker configuration file used during strain-space construction  
-in `feature_pipeline/strain_space/notebooks/sspace.ipynb`.
+in `feature_pipeline/strain_space/notebooks/03_build_sspace.ipynb`.
 
 ---
 
@@ -60,4 +76,4 @@ Before running any ChemicalChecker-based step, set:
 
 ```bash
 export CC_CONFIG=/absolute/path/to/your/cc_config.json
-
+```

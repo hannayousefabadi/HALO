@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
 """
-Fig2
-Panels:
+Generate Figure 2:
+
+Output panels:
 - A: Metric summary (train vs test, aggregated)
-- B: Confusion matrix (test set, aggregated)
+- B: Confusion matrix (test set, average fold)
 - C: ROC curve (test set, aggregated, synergy = positive)
 - D: Precision–recall curve (test set, aggregated, synergy = positive)
 - E: Per-fold test performance (SynChecker-CV1 outer folds)
 """
-
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 import matplotlib
@@ -30,19 +28,14 @@ from sklearn.metrics import (
 # Paths
 # ==========================
 
-RESULT_DIR = Path(
-    "/home/hany/projects/cc_ml/models/results/"
-    "exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv_bliss005"
-)
+from halo.paths import MODEL_RESULTS, FIGURES 
 
-PLOT_DIR = Path("/home/hany/projects/cc_ml/plots/fig2_main_model")
+PLOT_DIR = FIGURES / "main"
 PLOT_DIR.mkdir(parents=True, exist_ok=True)
+FIG2_PATH_PNG = PLOT_DIR / "fig2.png"
 
-FIG2_PATH_PNG = PLOT_DIR / "Fig2.png"
-FIG2_PATH_PDF = PLOT_DIR / "Fig2.pdf"
-
+RESULT_DIR = MODEL_RESULTS / "exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv_bliss005"
 SCHEME_SUFFIX = "cv1"
-
 METRICS_FOLDS_PATH = RESULT_DIR / f"metrics_per_fold_{SCHEME_SUFFIX}.csv"
 
 # ==========================
@@ -58,11 +51,11 @@ def load_data():
 
     metrics_train = pd.read_csv(metrics_train_path).iloc[0].to_dict()
     metrics_test = pd.read_csv(metrics_test_path).iloc[0].to_dict()
-    df_train = pd.read_csv(train_pred_path)
-    df_test = pd.read_csv(test_pred_path)
+    df_train = pd.read_csv(train_pred_path).copy()
+    df_test = pd.read_csv(test_pred_path).copy()
 
     # per-fold test metrics: one row per outer fold
-    metrics_folds = pd.read_csv(METRICS_FOLDS_PATH)
+    metrics_folds = pd.read_csv(METRICS_FOLDS_PATH).copy()
 
     return metrics_train, metrics_test, df_train, df_test, metrics_folds
 
@@ -70,16 +63,6 @@ def load_data():
 # ==========================
 # Colors & style
 # ==========================
-
-# palette from you:
-# main blue        #1f77b4
-# Pastel Blue      #7BAFD4
-# Pastel Teal      #8DC5C1
-# Pastel Green     #A7D7A0
-# Pastel Yellow    #F4E3A3
-# Pastel Peach     #F7C9A9
-# Pastel Red       #E8A5A5
-# Warm Gray        #C7C7C7
 
 COLOR_TRAIN = "#1f77b4"      # dark blue
 COLOR_TEST = "#8DC5C1"       # pastel teal
@@ -164,6 +147,14 @@ def plot_panel_B(ax, df_test):
     fold_ids = sorted(df_test["fold"].unique())
     n_folds = len(fold_ids)
 
+    # fold-level class balance diagnostic
+    fold_balance = (
+        df_test.groupby("fold")["y_true_label"]
+        .value_counts(normalize=False)
+        .unstack(fill_value=0)
+    )
+    print("Per-fold test label counts:\n", fold_balance)
+
     # sum of per-fold test confusion matrices
     cm_sum = np.zeros((len(labels), len(labels)), dtype=float)
 
@@ -181,7 +172,7 @@ def plot_panel_B(ax, df_test):
     # average per fold (so total ≈ size of one test set)
     cm_avg = cm_sum / n_folds
 
-    # if you want integer-looking counts, round:
+    # to have an integer-looking counts, round:
     cm_avg_rounded = np.rint(cm_avg).astype(int)
 
     disp = ConfusionMatrixDisplay(confusion_matrix=cm_avg_rounded,
@@ -327,11 +318,9 @@ def main():
     fig.tight_layout()
 
     fig.savefig(FIG2_PATH_PNG, dpi=600)
-    fig.savefig(FIG2_PATH_PDF)
     plt.close(fig)
 
     print("Saved Fig 2 PNG to:", FIG2_PATH_PNG)
-    print("Saved Fig 2 PDF to:", FIG2_PATH_PDF)
 
 
 if __name__ == "__main__":

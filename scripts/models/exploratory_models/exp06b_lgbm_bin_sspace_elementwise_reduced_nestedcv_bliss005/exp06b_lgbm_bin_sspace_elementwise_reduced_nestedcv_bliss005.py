@@ -1,18 +1,29 @@
 #!/usr/bin/env python3
 """
-** Experiment: exp06b_lgbm_bin_sspace_elementwise_reduced_nestedcv_bliss005 (HALO-CV1s)**
+Experiment: exp06b_lgbm_bin_sspace_elementwise_reduced_nestedcv_bliss005 (HALO-S-CV1)
 
-- task: binary classification, with additivity cutoff of ±0.05 on Bliss score
-- feature_design: reduced elementwise similarity (from exp05)
-- use_sspace: true (already baked into features, no recomputation here)
-- nested_cv: true
-- input: elementwise_features_filtered_cv1.csv from exp05
+- task: binary classification (synergy vs antagonism) using a Bliss additivity cutoff of ±0.05
+- feature_design: reduced elementwise similarity features (selected in exp05b; S-space included)
+- use_sspace: true (already baked into the reduced feature table; no feature recomputation here)
+- outer_cv: CV1-style evaluation (drug-pair held-out)
+    - 5 outer folds generated with StratifiedGroupKFold grouped by Drug Pair
+      (falls back to GroupKFold if StratifiedGroupKFold is unavailable)
+- inner_cv: nested hyperparameter search inside each outer fold
+    - 3-fold StratifiedGroupKFold (group = Drug Pair; fallback to GroupKFold)
+    - 32 LightGBM configurations sampled from a predefined search space
+    - best configuration selected by mean inner-CV accuracy
+- model: LightGBM binary classifier; “synergy” treated as the positive class for ROC AUC
+- evaluation: per outer fold, refit on the full outer-train set and evaluate once on the outer-test set
+
+Outputs (MODEL_RESULTS/exp06b_lgbm_bin_sspace_elementwise_reduced_nestedcv_bliss005):
+- cv_metrics_summary_cv1.csv          : mean±std over folds for AUC/accuracy/F1 and per-class metrics
+- confusion_matrix_cv1_mean.csv/.png  : mean confusion matrix over outer folds
+- feature_importances_cv1.csv         : mean±std feature importance (gain) over outer folds
+
+**Data integrity note:**
+All preprocessing (NA handling, dtype enforcement, column validation, etc.) was completed upstream.
+This script assumes clean, validated input data.
 """
-
-import os
-import sys
-import itertools
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -35,8 +46,8 @@ from sklearn.metrics import (
     precision_recall_fscore_support,
 )
 
-sys.path.append("/home/hannie/cc_ml/pipeline")
-from shared_utils.data_io import classify_interaction
+from halo.paths import MODEL_RESULTS
+from halo.shared_utils.data_io import classify_interaction
 
 
 def main():
@@ -45,16 +56,9 @@ def main():
     # ==========================
     SCHEME = "CV1" 
 
-    filtered_path = Path(
-        "/home/hannie/cc_ml/models/results/"
-        "exp05b_lgbm_bin_sspace_elementwise_featselect_bliss005/"
-        "elementwise_features_filtered_cv1.csv"
-    )
+    filtered_path = MODEL_RESULTS / "exp05b_lgbm_bin_sspace_elementwise_featselect_bliss005" / "elementwise_features_filtered_cv1.csv"
 
-    out_dir = Path(
-        "/home/hannie/cc_ml/models/results/"
-        "exp06b_lgbm_bin_sspace_elementwise_reduced_nestedcv_bliss005"
-    )
+    out_dir = MODEL_RESULTS / "exp06b_lgbm_bin_sspace_elementwise_reduced_nestedcv_bliss005"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(
@@ -172,7 +176,7 @@ def main():
     # store metrics across folds
     fold_results = []
     cm_total = None
-    fi_per_fold = []  # <-- store feature importances per outer fold
+    fi_per_fold = []  # store feature importances per outer fold
 
     synergy_code = le.transform(["synergy"])[0]
     ant_code = le.transform(["antagonism"])[0]
@@ -198,7 +202,7 @@ def main():
                 learning_rate=float(rng.choice([0.02, 0.03])),
                 max_depth=max_depth,
                 num_leaves=int(rng.choice(leaves_map[max_depth])),
-                # moderate regularization (NOT heavy)
+                # moderate regularization 
                 min_data_in_leaf=int(rng.choice([200, 300])),
                 feature_fraction=float(rng.choice([0.30, 0.40, 0.50])),
                 bagging_fraction=float(rng.choice([0.60, 0.70, 0.80])),

@@ -1,35 +1,45 @@
 #!/usr/bin/env python3
 """
-** Experiment: exp09_lgbm_bin_sspace_elementwise_reduced_simplecv **
+Experiment: exp09_lgbm_bin_sspace_elementwise_reduced_simplecv (HALO-Base / standard CV)
 
-- task: binary classification
-- feature_design: reduced elementwise similarity (exp05)
-- use_sspace: true (already baked into features)
-- nested_cv: false (simple CV, intentionally leaky)
-- purpose: estimate the "upper bound" accuracy achievable with selected features
+Config
+- task: binary classification (synergy vs antagonism)
+- feature_design: reduced elementwise similarity features (selected in exp05; includes CC + S-space dimensions)
+- use_sspace: true (S-space is already included in the reduced feature table; no feature recomputation here)
+- cv_scheme: standard stratified split + standard stratified CV (no grouping by drug pair)
+- nested_cv: false (intentionally non-nested; model selection and evaluation are not strictly separated)
+- purpose: provide an optimistic baseline / “upper-bound” estimate under lenient validation assumptions
+
+Training / selection
+- outer split: single stratified train/test split (80/20)
+- hyperparameter tuning: RandomizedSearchCV with 5-fold StratifiedKFold on the training split
+- model: LightGBM classifier (objective="binary"); metrics reported via shared_utils (F1-focused search)
+
+Outputs
+- console: best hyperparameters, test-set classification metrics, and an overfitting report
+- no fold-aggregated artifacts are produced (this script is a baseline comparator)
+
+**Data integrity note:**
+All preprocessing (NA handling, dtype enforcement, column validation, etc.)
+was completed in the preprocessing scripts.
+This notebook assumes clean, validated input data.
 """
 
-import os
-import sys
-from pathlib import Path
-import numpy as np
-import pandas as pd
 
+import pandas as pd
 from sklearn.model_selection import (
     StratifiedKFold,
     train_test_split,
     RandomizedSearchCV
 )
 from sklearn.preprocessing import LabelEncoder
-from sklearn.metrics import (
-    accuracy_score, f1_score, roc_auc_score,
-    classification_report, confusion_matrix
-)
 import lightgbm as lgb
 
-# Make pipeline importable
-sys.path.append("/home/hannie/cc_ml/pipeline")
-from shared_utils.metrics import classification_metrics, overfitting_report
+# ==========================
+# Paths
+# ==========================
+from halo.paths import MODEL_RESULTS
+from halo.shared_utils.metrics import classification_metrics, overfitting_report
 
 
 def main():
@@ -38,11 +48,7 @@ def main():
     # ==========================
     # 1) Load reduced feature file from exp05
     # ==========================
-    reduced_path = Path(
-        "/home/hannie/cc_ml/models/results/"
-        "exp05_lgbm_bin_sspace_elementwise_featselect/"
-        "elementwise_features_filtered_cv1.csv"
-    )
+    reduced_path = MODEL_RESULTS / "exp05_lgbm_bin_sspace_elementwise_featselect" / "elementwise_features_filtered_cv1.csv"
 
     if not reduced_path.exists():
         raise FileNotFoundError(f"Reduced feature file not found: {reduced_path}")

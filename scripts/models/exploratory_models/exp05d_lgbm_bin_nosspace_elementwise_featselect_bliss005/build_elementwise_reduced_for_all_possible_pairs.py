@@ -1,29 +1,39 @@
 #!/usr/bin/env python3
 """
-** Experiment: build_elementwise_reduced_full_for_all_possible_pairs **
+Experiment: build_elementwise_reduced_full_for_all_possible_pairs
 
-- task: feature selection for all the possible drug pairs out of 98 drugs 
-- feature_design: elementwise similarity (cos_elem_*, euc_elem_*), **CC-only**
-- use_sspace: false
-- goal: reduce elementwise feature space on CC only features for finding novel pairs
+Config
+- feature source: Chemical Checker only (no S-space)
+- feature_design: elementwise similarity (cos_elem_* and euc_elem_*)
+- selected feature set: derived from exp05d-style feature selection on labeled training data
+  - labels recomputed from Bliss using neutrality cutoff ±0.05
+  - cv_scheme for selection: cv1_single (single drug-pair-disjoint split; selection on train only)
+- output: reduced elementwise feature matrix for all unordered pairs among the candidate drug set
+  (used for novel-pair scoring downstream)
+
+Goal
+1) Run CC-only elementwise feature selection on labeled combinations (synergy vs antagonism, ±0.05 cutoff).
+2) Enumerate all unordered pairs among the unique compounds and compute CC-only elementwise features.
+3) Subset to the selected feature list and write a reduced all-pairs matrix for downstream ranking.
+
+Data integrity note
+All preprocessing (missing values, dtypes, column validation, and base CC feature construction) is performed
+upstream. This script assumes clean, validated CC features and combination metadata. Interaction labels are
+recomputed from Bliss using ±0.05 as part of the feature-selection definition.
 """
 
-import os
-import sys
 import itertools
-from pathlib import Path
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
 
 from sklearn.model_selection import GroupShuffleSplit
 from sklearn.preprocessing import LabelEncoder
-from sklearn.metrics import accuracy_score
 
-# ----- make pipeline importable -----
-sys.path.append("/home/hannie/cc_ml/pipeline")
-from feature_mapper.feature_mapper import FeatureMapper
-from shared_utils.data_io import classify_interaction
+from halo.paths import CC_FEATURES, PROCESSED, MODEL_RESULTS
+from halo.mappers.feature_mapper import FeatureMapper
+from halo.shared_utils.data_io import classify_interaction
+
 
 
 def main():
@@ -35,14 +45,11 @@ def main():
     corr_min = 0.01         # minimal |corr(feature, y)| to keep
     keep_top_frac = 0.30    # keep top 30% of features by importance
 
-    base_dir = Path("/home/hannie/cc_ml/pipeline/preprocessing/data_to_use")
-    cc_path = base_dir / "features_25_levels_into_1.csv"
-    combos_path = base_dir / "combinations_combined.csv"
+    cc_path = CC_FEATURES / "cc_features_concat_25x128.csv"
+    combos_path = PROCESSED / "halo_training_dataset.csv"
 
-    out_dir = Path(
-        "/home/hannie/cc_ml/models/results/exp05d_lgbm_bin_nosspace_elementwise_featselect_bliss005"
-    )
-    out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = MODEL_RESULTS / "exp05d_lgbm_bin_nosspace_elementwise_featselect_bliss005"
+    out_dir.parent.mkdir(parents=True, exist_ok=True)
 
     print("\n=== EXP05d: feature selection + all possible pairs ===\n")
 
@@ -211,7 +218,6 @@ def main():
                 "Drug A Inchikey": ik_a,
                 "Drug B Inchikey": ik_b,
                 "Pair_ID": pair_id,
-                # Optional meta
                 "Strain": np.nan,
                 "Specie": np.nan,
                 "Bliss Score": np.nan,
@@ -255,6 +261,7 @@ def main():
     df_out_allpairs = df_allpairs[meta_cols + selected_features].copy()
 
     out_csv = out_dir / "elementwise_features_filtered_all_possible_pairs_cv1_cc_only.csv"
+    out_csv.mkdir(parents=True, exist_ok=True)
     df_out_allpairs.to_csv(out_csv, index=False)
 
     print("\nSaved ALL-PAIRS reduced file to:", out_csv)

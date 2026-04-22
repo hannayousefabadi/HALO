@@ -1,0 +1,234 @@
+\begin{thebibliography}{10}
+
+\bibitem{ref1}
+Md.~Abdus Salam, Md.~Yusuf Al-Amin, Moushumi~Tabassoom Salam, Jogendra~Singh
+  Pawar, Naseem Akhter, Ali~A. Rabaan, and Mohammed A.~A. Alqumber.
+\newblock Antimicrobial {Resistance}: {A} {Growing} {Serious} {Threat} for
+  {Global} {Public} {Health}.
+\newblock {\em Healthcare}, 11(13):1946, July 2023.
+
+\bibitem{ref2}
+Antimicrobial resistance.
+
+\bibitem{ref3}
+Daniela Melchiorri, Tamarie Rocke, Richard~A Alm, Alexandra~M Cameron, and
+  Valeria Gigante.
+\newblock Addressing urgent priorities in antibiotic development: insights from
+  {WHO} 2023 antibacterial clinical pipeline analyses.
+\newblock {\em The Lancet. Microbe}, 6(3):None, March 2025.
+
+\bibitem{ref4}
+Bence Bognár, Réka Spohn, and Viktória Lázár.
+\newblock Drug combinations targeting antibiotic resistance.
+\newblock {\em npj Antimicrobials and Resistance}, 2:29, October 2024.
+
+\bibitem{ref5}
+J.~F. Acar.
+\newblock Antibiotic synergy and antagonism.
+\newblock {\em The Medical Clinics of North America}, 84(6):1391--1406,
+  November 2000.
+
+\bibitem{ref6}
+R.~C. Moellering.
+\newblock Rationale for use of antimicrobial combinations.
+\newblock {\em The American Journal of Medicine}, 75(2A):4--8, August 1983.
+
+\bibitem{ref7}
+G.~M. Eliopoulos and C.~T. Eliopoulos.
+\newblock Antibiotic combinations: should they be tested?
+\newblock {\em Clinical Microbiology Reviews}, 1(2):139--156, April 1988.
+
+\bibitem{ref8}
+Antimicrobial interactions: mechanisms and implications for drug discovery and
+  resistance evolution - {ScienceDirect}.
+
+\bibitem{ref9}
+Species-specific activity of antibacterial drug combinations {\textbar}
+  {Nature}.
+
+\bibitem{ref10}
+Elisabetta Cacace, Vladislav Kim, Vallo Varik, Michael Knopp, Manuela Tietgen,
+  Amber Brauer-Nikonow, Kemal Inecik, André Mateus, Alessio Milanese,
+  Marita~Torrissen Mårli, Karin Mitosch, Joel Selkrig, Ana~Rita Brochado,
+  Oscar~P. Kuipers, Morten Kjos, Georg Zeller, Mikhail~M. Savitski, Stephan
+  Göttig, Wolfgang Huber, and Athanasios Typas.
+\newblock Systematic analysis of drug combinations against {Gram}-positive
+  bacteria.
+\newblock {\em Nature Microbiology}, 8(11):2196--2212, November 2023.
+\newblock Publisher: Nature Publishing Group.
+
+\bibitem{ref11}
+Within-species variability of antibiotic interactions in {Gram}-negative
+  bacteria {\textbar} {mBio}.
+
+\bibitem{ref12}
+Machine learning approaches for drug combination therapies - {PMC}.
+
+\bibitem{ref13}
+Harnessing machine learning to find synergistic combinations for {FDA}-approved
+  cancer drugs {\textbar} {Scientific} {Reports}.
+
+\bibitem{ref14}
+A systematic evaluation of deep learning methods for the prediction of drug
+  synergy in cancer {\textbar} {PLOS} {Computational} {Biology}.
+
+\bibitem{ref15}
+Jennifer~M. Cantrell, Carolina~H. Chung, and Sriram Chandrasekaran.
+\newblock Machine learning to design antimicrobial combination therapies:
+  {Promises} and pitfalls.
+\newblock {\em Drug Discovery Today}, 27(6):1639--1651, June 2022.
+
+\bibitem{ref16}
+Daniel~J. Mason, Ian Stott, Stephanie Ashenden, Zohar~B. Weinstein, Idil
+  Karakoc, Selin Meral, Nurdan Kuru, Andreas Bender, and Murat Cokol.
+\newblock Prediction of {Antibiotic} {Interactions} {Using} {Descriptors}
+  {Derived} from {Molecular} {Structure}.
+\newblock {\em Journal of Medicinal Chemistry}, 60(9):3902--3912, May 2017.
+
+\bibitem{ref17}
+Sriram Chandrasekaran, Melike Cokol‐Cakmak, Nil Sahin, Kaan Yilancioglu,
+  Hilal Kazan, James~J. Collins, and Murat Cokol.
+\newblock Chemogenomics and orthology‐based design of antibiotic combination
+  therapies.
+\newblock {\em Molecular Systems Biology}, 12(5):872, May 2016.
+
+\bibitem{ref18}
+Ji~Lv, Guixia Liu, Yuan Ju, Ying Sun, and Weiying Guo.
+\newblock Prediction of {Synergistic} {Antibiotic} {Combinations} by {Graph}
+  {Learning}.
+\newblock {\em Frontiers in Pharmacology}, 13, March 2022.
+\newblock Publisher: Frontiers.
+
+\bibitem{ref19}
+Margaret~M. Reuter, Katherine~L. Lev, Jon Albo, Harkirat~Singh Arora, Nemo Liu,
+  Shenghao Tan, Madeline~R. Shay, Debmalya Sarkar, Aaron Robida, David~H.
+  Sherman, Rudy~J. Richardson, Nate~J. Cira, and Sriram Chandrasekaran.
+\newblock Ultra-high-throughput screening of antimicrobial combination
+  therapies using a two-stage transparent machine learning model.
+\newblock {\em bioRxiv: The Preprint Server for Biology}, page
+  2024.11.25.625231, November 2024.
+
+\bibitem{ref20}
+Extending the small-molecule similarity principle to all levels of biology with
+  the {Chemical} {Checker} {\textbar} {Nature} {Biotechnology}.
+
+\bibitem{ref21}
+Srijit Seal, Hongbin Yang, Maria-Anna Trapotsi, Satvik Singh, Jordi
+  Carreras-Puigvert, Ola Spjuth, and Andreas Bender.
+\newblock Merging bioactivity predictions from cell morphology and chemical
+  fingerprint models using similarity to training data.
+\newblock {\em Journal of Cheminformatics}, 15(1):56, June 2023.
+
+\bibitem{ref22}
+{CCSynergy}: an integrative deep-learning framework enabling context-aware
+  prediction of anti-cancer drug synergy {\textbar} {Briefings} in
+  {Bioinformatics} {\textbar} {Oxford} {Academic}.
+
+\bibitem{ref23}
+Hiu~Fung Yip, Xiao Wei, Zeming Li, Qing Ren, DongSheng Cao, Lu~Zhang, and
+  Aiping Lu.
+\newblock Bio-{Mol}:{Pretraining} {Multimodality} {Bioactivity} {Profile} for
+  {Enhancing} {Small} {Molecule} {Property} {Prediction}, November 2023.
+\newblock Pages: 2023.11.02.565401 Section: New Results.
+
+\bibitem{ref24}
+Gong-Hua Li, Feifei Han, Rong-Hua Luo, Peng Li, Chia-Jung Chang, Weihong Xu,
+  Xin-Yan Long, Jing-Fei Huang, Yong-Tang Zheng, Qing-Peng Kong, and Wenzhong
+  Xiao.
+\newblock Predictive {Systems} {Biology} {Modeling}: {Unraveling} {Host}
+  {Metabolic} {Disruptions} and {Potential} {Drug} {Targets} in {Acute} {Viral}
+  {Infections}, August 2023.
+\newblock Pages: 2023.07.24.550423 Section: New Results.
+
+\bibitem{ref25}
+Eva Viesi, Ugo Perricone, Patrick Aloy, and Rosalba Giugno.
+\newblock {APBIO}: bioactive profiling of air pollutants through inferred
+  bioactivity signatures and prediction of novel target interactions.
+\newblock {\em Journal of Cheminformatics}, 17(1):13, January 2025.
+
+\bibitem{ref26}
+Lei Chen, Bi-Qing Li, Ming-Yue Zheng, Jian Zhang, Kai-Yan Feng, and Yu-Dong
+  Cai.
+\newblock Prediction of {Effective} {Drug} {Combinations} by {Chemical}
+  {Interaction}, {Protein} {Interaction} and {Target} {Enrichment} of {KEGG}
+  {Pathways}.
+\newblock {\em BioMed Research International}, 2013:723780, 2013.
+
+\bibitem{ref27}
+Frontiers {\textbar} {ACDB}: {An} {Antibiotic} {Combination} {DataBase}.
+
+\bibitem{ref28}
+Joseph Lehár, Grant~R. Zimmermann, Andrew~S. Krueger, Raymond~A. Molnar,
+  Jebediah~T. Ledell, Adrian~M. Heilbut, Glenn~F. Short, Leanne~C. Giusti,
+  Garry~P. Nolan, Omar~A. Magid, Margaret~S. Lee, Alexis~A. Borisy, Brent~R.
+  Stockwell, and Curtis~T. Keith.
+\newblock Chemical combination effects predict connectivity in biological
+  systems.
+\newblock {\em Molecular Systems Biology}, 3(1):MSB4100116, February 2007.
+
+\bibitem{ref29}
+R.~Hancock and P.~C. Fitz-James.
+\newblock {SOME} {DIFFERENCES} {IN} {THE} {ACTION} {OF} {PENICILLIN},
+  {BACITRACIN}, {AND} {VANCOMYCIN} {ON} {BACILLUS} {MEGATERIUM}.
+\newblock {\em Journal of Bacteriology}, 87(5):1044--1050, May 1964.
+
+\bibitem{ref30}
+B.~Chattopadhyay and I.~Hall.
+\newblock In vitro combination of mecillinam with cephradine or amoxycillin for
+  organisms resistant to single agents.
+\newblock {\em The Journal of Antimicrobial Chemotherapy}, 5(5):549--553,
+  September 1979.
+
+\bibitem{ref31}
+Carola E.~H. Rosenkilde, Christian Munck, Andreas Porse, Marius Linkevicius,
+  Dan~I. Andersson, and Morten O.~A. Sommer.
+\newblock Collateral sensitivity constrains resistance evolution of the
+  {CTX}-{M}-15 $\beta$-lactamase.
+\newblock {\em Nature Communications}, 10(1):618, February 2019.
+\newblock Publisher: Nature Publishing Group.
+
+\bibitem{ref32}
+C.~S. Goodwin, W.~E.~S. Harper, and J.~Epis.
+\newblock Synergy between cefuroxime and ticarcillin against
+  \textit{{Providencia}}, and the activity of cefuroxime against
+  \textit{{Streptococcus} faecalis} and gram-negative bacteria.
+\newblock {\em Pathology}, 12(2):294--295, January 1980.
+
+\bibitem{ref33}
+P.~Angehrn.
+\newblock In vitro and in vivo synergy between ceftriaxone and aminoglycosides
+  against {Pseudomonas} aeruginosa.
+\newblock {\em European Journal of Clinical Microbiology}, 2(5):489--495,
+  October 1983.
+
+\bibitem{ref34}
+A classic antibiotic reimagined: {Rationally} designed bacitracin variants
+  exhibit potent activity against vancomycin-resistant pathogens {\textbar}
+  {PNAS}.
+
+\bibitem{ref35}
+Cristina Gan, Elisa Langa, Antonio Valenzuela, Diego Ballestero, and M.~Rosa
+  Pino-Otín.
+\newblock Synergistic {Activity} of {Thymol} with {Commercial} {Antibiotics}
+  against {Critical} and {High} {WHO} {Priority} {Pathogenic} {Bacteria}.
+\newblock {\em Plants}, 12(9):1868, May 2023.
+
+\bibitem{ref36}
+Sarah C~J Jorgensen, Evan~J Zasowski, Trang~D Trinh, Abdalhamid~M Lagnf, Sahil
+  Bhatia, Noor Sabagha, Jacinda~C Abdul-Mutakabbir, Sara Alosaimy, Ryan~P
+  Mynatt, Susan~L Davis, and Michael~J Rybak.
+\newblock Daptomycin {Plus} $\beta$-{Lactam} {Combination} {Therapy} for
+  {Methicillin}-resistant {Staphylococcus} aureus {Bloodstream} {Infections}:
+  {A} {Retrospective}, {Comparative} {Cohort} {Study}.
+\newblock {\em Clinical Infectious Diseases}, 71(1):1--10, June 2020.
+
+\bibitem{ref37}
+Arnau Comajuncosa-Creus, Martino Bertoni, Miquel Duran-Frigola, Adrià
+  Fernández-Torras, Oriol Guitart-Pla, Nils Kurzawa, Martina Locatelli,
+  Yasmmin Martins, Elena Pareja-Lorente, Gema Rojas-Granado, Nicolas Soler, Eva
+  Viesi, and Patrick Aloy.
+\newblock Integration of diverse bioactivity data into the {Chemical} {Checker}
+  compound universe.
+\newblock {\em Nature Protocols}, 20(11):3270--3294, November 2025.
+
+\end{thebibliography}

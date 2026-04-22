@@ -1,21 +1,39 @@
 #!/usr/bin/env python3
 """
-Experiment: exp10b_nn_bin_sspace_elementwise_reduced_nestedcv_bliss005
+Experiment: exp10b_nn_bin_sspace_elementwise_reduced_nestedcv_bliss005 (NN, HALO-S-CV1)
 
-- task: binary classification using a refined Bliss-score threshold of ±0.05 to exclude neutral interactions.
-- feature_design: reduced elementwise similarity (from exp05b)
-- use_sspace: true (baked into features)
-- nested_cv: true, CV1-style
-- model: feed-forward DNN with dropout + batchnorm
-- goal: one main neural model on the best feature set
+Config
+- task: binary classification (synergy vs antagonism) using Bliss additivity cutoff ±0.05 (neutral excluded)
+- feature_design: reduced elementwise similarity features (selected in exp05b)
+- use_sspace: true (S-space features are already included in the reduced feature table; no feature recomputation here)
+- cv_scheme: CV1 (drug-pair held-out)
+- outer_split: single 80/20 GroupShuffleSplit grouped by Drug Pair (pair-disjoint held-out test)
+- nested_cv: true (hyperparameter selection performed only on the outer-train split)
+- inner_cv: 3-fold StratifiedGroupKFold grouped by Drug Pair to select the best DNN configuration
+- model: feed-forward neural network (MLP) with BatchNorm + ReLU + Dropout; trained with BCEWithLogitsLoss and Adam
+- selection metric: mean inner-fold ROC AUC with “synergy” treated as the positive class (ties broken by accuracy)
+
+Training / evaluation
+1) Load exp05b reduced feature matrix and keep only synergy/antagonism labels (±0.05 cutoff applied upstream).
+2) Create a CV1 outer split by drug-pair grouping (unseen pairs in outer-test).
+3) Run inner grouped CV over a small set of pre-defined NN hyperparameter configs (hidden sizes, dropout, lr, weight decay).
+4) Retrain the best config on the full outer-train set using early stopping (with an internal stratified train/val split).
+5) Evaluate once on the untouched outer-test split and report AUC/accuracy/F1 plus per-class precision/recall/F1.
+6) Report an overfitting check by comparing outer-train vs outer-test metrics.
+
+Outputs
+- console: chosen best config, outer-test metrics (ROC AUC, accuracy, F1 macro/weighted), confusion matrix,
+  classification report, per-class metrics, and an overfitting check
+- note: this script does not write artifacts (metrics CSVs / plots); it is a single-split CV1 evaluation
+
+**Data integrity note:**
+All preprocessing (NA handling, dtype enforcement, column validation, etc.)
+was completed in the preprocessing scripts.
+This notebook assumes clean, validated input data.
 """
-
-import sys
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
-
 from sklearn.model_selection import GroupShuffleSplit, StratifiedGroupKFold
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import (
@@ -32,9 +50,11 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 
+from halo.paths import MODEL_RESULTS
 
-# ============ Dataset wrapper ============
-
+# ==========================
+# Dataset wrapper 
+# ==========================
 class TabularDataset(Dataset):
     def __init__(self, X, y):
         if isinstance(X, pd.DataFrame):
@@ -51,8 +71,9 @@ class TabularDataset(Dataset):
         return self.X[idx], self.y[idx]
 
 
-# ============ DNN model ============
-
+# ==========================
+# DNN model 
+# ==========================
 class CCNet(nn.Module):
     def __init__(self, in_dim, hidden=(512, 256, 128), dropout=0.3):
         super().__init__()
@@ -73,7 +94,9 @@ class CCNet(nn.Module):
         return self.net(x).squeeze(1)
 
 
-# ============ Training helpers ============
+# ==========================
+# Training helpers 
+# ==========================
 
 def train_dnn(
     X_train,
@@ -164,7 +187,9 @@ def predict_proba(model, X, device, batch_size=256):
     return np.concatenate(probs, axis=0)
 
 
-# ============ Main ============
+# ==========================
+# Main 
+# ==========================
 
 def main():
     print("\n=== EXP10: DNN + reduced elementwise + nested CV (CV1) ===\n")
@@ -175,11 +200,7 @@ def main():
     # ==========================
     # 1) Load reduced feature matrix (from exp05)
     # ==========================
-    reduced_path = Path(
-        "/home/hannie/cc_ml/models/results/"
-        "exp05b_lgbm_bin_sspace_elementwise_featselect_bliss005/"
-        "elementwise_features_filtered_cv1.csv"
-    )
+    reduced_path = MODEL_RESULTS / "exp05b_lgbm_bin_sspace_elementwise_featselect_bliss005" / "elementwise_features_filtered_cv1.csv"
 
     if not reduced_path.exists():
         raise FileNotFoundError(f"Reduced feature file not found: {reduced_path}")

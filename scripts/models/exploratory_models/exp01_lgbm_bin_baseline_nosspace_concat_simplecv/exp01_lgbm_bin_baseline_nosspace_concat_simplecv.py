@@ -1,33 +1,35 @@
 #!/usr/bin/env python3
 """
-# **Experiment: exp01_lgbm_bin_baseline_nosspace_concat_simplecv**
+Experiment: exp01_lgbm_bin_baseline_nosspace_concat_simplecv
 
-# - task: binary classification
-# - feature_design: concatenation
-# - use_sspace: false
-# - nested_cv: false
-# - notes: basic concatenation test with LightGBM
+Config
+- model: LightGBM (LGBMClassifier)
+- task: binary classification (synergy vs antagonism)
+- feature_design: concatenation (drugA + drugB CC features)
+- sspace: disabled
+- CV:
+  - nested_cv: disabled
+  - evaluation split: single stratified train/test split
+  - hyperparameter search: RandomizedSearchCV with StratifiedKFold (5-fold) on train only
+- label rule: bliss neutrality cutoff ±0.1 (applied during preprocessing; this script assumes labels are already finalized)
 
-**Data integrity note:**  
-All preprocessing (NA handling, dtype enforcement, column validation, etc.)
-was completed in the preprocessing scripts.  
-This notebook assumes clean, validated input data.
+Data integrity note
+All preprocessing (missing values, dtypes, column validation, label construction, and filtering)
+is performed upstream in preprocessing notebooks/scripts. This script assumes the processed
+inputs are clean and consistent.
+
+Class encoding
+The binary target is encoded as {0,1} where 1 corresponds to synergy and is treated as the
+positive class for F1 and ROC-AUC.
 """
-
-import os
-import sys
 import pandas as pd
-import numpy as np
-from collections import Counter
 from sklearn.model_selection import RandomizedSearchCV, StratifiedKFold
 import lightgbm as lgb
 
-# ---- make pipeline importable ----
-sys.path.append(os.path.expanduser("/home/hannie/cc_ml/pipeline"))
-
-from feature_mapper.feature_mapper import FeatureMapper
-from shared_utils.data_io import features_and_target, basic_split
-from shared_utils.metrics import classification_metrics, overfitting_report
+from halo.paths import CC_FEATURES, PROCESSED
+from halo.mappers.feature_mapper import FeatureMapper
+from halo.shared_utils.data_io import features_and_target, basic_split
+from halo.shared_utils.metrics import classification_metrics, overfitting_report
 
 
 def main():
@@ -35,10 +37,10 @@ def main():
     print("\n=== EXP01 ===\n")
 
     # ==========================
-    # load data 
+    # 1) load data 
     # ==========================
-    cc_path = "/home/hannie/cc_ml/pipeline/preprocessing/data_to_use/features_25_levels_into_1.csv"
-    combos_path = "/home/hannie/cc_ml/pipeline/preprocessing/data_to_use/combinations_combined.csv"
+    cc_path = CC_FEATURES / "cc_features_concat_25x128.csv"
+    combos_path = PROCESSED / "halo_training_dataset.csv"
 
     cc_df = pd.read_csv(cc_path).copy()
     combinations_df = pd.read_csv(combos_path).copy()
@@ -47,7 +49,7 @@ def main():
     print(f"Loaded combos: {combinations_df.shape}")
 
     # ==========================
-    # feature mapping 
+    # 2) Feature mapping 
     # ==========================
     mapper = FeatureMapper()
     df = mapper.concatenation(combinations_df, cc_df)
@@ -56,7 +58,7 @@ def main():
     print(df.head())
 
     # ==========================
-    # encoding 
+    # 3) Encoding 
     # ==========================
     X, y_encoded, class_names = features_and_target(
         df,
@@ -84,7 +86,7 @@ def main():
     """
 
     # ==========================    
-    # base model 
+    # 4) Base model 
     # ==========================
     base_clf = lgb.LGBMClassifier(
         objective='binary',
@@ -94,7 +96,7 @@ def main():
     )
 
     # ==========================
-    # Hyperparam search
+    # 5) Hyperparam search
     # ==========================
     param_dist = {
         'learning_rate': [0.02, 0.05],
@@ -132,7 +134,7 @@ def main():
     print("\nBest params:", search.best_params_)
 
     # ==========================
-    # evaluate 
+    # 6) Evaluate 
     # ==========================
     y_pred = best_model.predict(X_test)
     y_score = best_model.predict_proba(X_test)[:, 1]

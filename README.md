@@ -25,8 +25,6 @@ HALO_repo/
 └── README.md
 ```
 
-
-
 ### Directory overview
 
 - **`src/`**  
@@ -75,9 +73,9 @@ Multi-level chemical and biological descriptors spanning levels **A–E**, with 
 - Final CC feature files are stored under:
 `data/features/chemicalchecker_cc/`
 including:
-- `chemicalchecker_data.csv` (raw per-level signatures)
-- `features_25_levels_into_1.csv`
-- `features_15_levels_into_1.csv`
+- `cc_features_raw.csv` (raw per-level signatures)
+- `cc_features_concat_25x128.csv`
+- `cc_features_concat_15x128.csv`
 
 2. **Strain-space (S-space) features**  
 Data-driven embeddings derived from **drug–strain fitness profiles**.
@@ -96,22 +94,50 @@ Detailed documentation for both pipelines is provided in:
 
 ## Setup
 
-### Requirements
-- Python ≥ 3.9
-- Conda or virtualenv recommended
-- Core dependencies include:  
-  `pandas`, `numpy`, `scikit-learn`, `lightgbm`, `chemicalchecker`, `requests`
-
-### Chemical Checker
-This project relies on the **Chemical Checker** framework.
-
-You must install it separately:
+### 1) Create environment
 ```bash
-git clone https://github.com/sbnb-irb/chemical_checker.git
+conda create -n halo python=3.10
+conda activate halo
 ```
 
-Set the environment variable CC_CONFIG to point to a local cc_config.json file before running strain-space construction:
-`export CC_CONFIG=/path/to/cc_config.json`
+### 2) Install HALO
+from repository root:
+```bash
+python -m pip install -e .
+```
+after installation, import such as:
+```python
+from halo.paths import CC_FEATURES
+```
+should work without notifying `sys.path`.
+
+### 3) Install core dependencies
+```bash
+python -m pip install pandas numpy scikit-learn lightgbm requests 
+```
+
+### Chemical Checker
+HALO uses the `Chemical Checker` for two purposes:
+1) Fetching Chemical Checker (CC) signatures via the CC API as drug features
+2) Building the **Strain-space (S-space)** feature set by using the python `chemicalchecker` package: uses the Chemical Checker pipeline to construct an additional feature set: Strain-space, derived from single-drug bacterial fitness profiles.
+
+#### Install
+You must install it separately:
+```bash
+python -m pip install chemicalchecker
+```
+
+**Configure CC (required):**
+Set `CC_CONFIG` to point to a valid config before importing `chemicalchecker`:
+```bash
+export CC_CONFIG=$(pwd)/feature_pipeline/chemicalchecker/cc_config.json
+```
+
+Validate the config is valid JSON:
+```bash
+python -m json.tool "$CC_CONFIG"
+```
+
 A reference configuration used in this study is included in:
 `feature_pipeline/chemicalchecker/cc_config.json`
 Users must adapt paths to their local setup.

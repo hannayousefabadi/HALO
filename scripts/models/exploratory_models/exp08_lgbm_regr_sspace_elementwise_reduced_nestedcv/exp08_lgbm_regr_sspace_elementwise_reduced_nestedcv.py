@@ -1,19 +1,26 @@
 #!/usr/bin/env python3
 """
-** Experiment: exp08_lgbm_regr_sspace_elementwise_reduced_nestedcv **
+Experiment: exp08_lgbm_regr_sspace_elementwise_reduced_nestedcv (HALO-S-CV1, regression)
 
-- task: regression (Bliss Score)
-- feature_design: reduced elementwise similarity (from exp05)
-- use_sspace: true (already baked into features, no recomputation here)
+Config
+- task: regression on Bliss Score (continuous outcome)
+- feature_design: reduced elementwise similarity features (selected in exp05; includes CC + S-space dimensions)
+- use_sspace: true (S-space is already included in the reduced feature table; no feature recomputation here)
+- cv_scheme: CV1 by default (drug-pair held-out via GroupShuffleSplit, 80/20); optional CV2 (strain + pair disjoint)
 - nested_cv: true
-- input: elementwise_features_filtered_cv1.csv
+    - inner_cv: 3-fold grouped CV by Drug Pair (GroupKFold) for hyperparameter search
+    - model selection: 32 sampled LightGBM configurations ranked by mean inner-CV RMSE (lower is better)
+- model: LightGBM regressor (objective="regression") with early stopping on RMSE
+- evaluation: held-out outer test set; reports RMSE, MAE, R², Spearman ρ, and Pearson r
+- outputs: saved predicted-vs-true scatter plot (pred_vs_true_{scheme}.png) plus console-logged metrics
+
+**Data integrity note:**
+All preprocessing (NA handling, dtype enforcement, column validation, etc.)
+was completed in the preprocessing scripts.
+This notebook assumes clean, validated input data.
 """
 
-import os
-import sys
 import itertools
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
@@ -28,6 +35,7 @@ from sklearn.metrics import (
     r2_score,
 )
 from scipy.stats import spearmanr, pearsonr
+from halo.paths import MODEL_RESULTS
 
 
 def main():
@@ -37,16 +45,9 @@ def main():
     SCHEME = "CV1"  # or "CV2"
 
     # Path to reduced elementwise dataset from exp05
-    filtered_path = Path(
-        "/home/hannie/cc_ml/models/results/"
-        "exp05_lgbm_bin_sspace_elementwise_featselect/"
-        "elementwise_features_filtered_cv1_full.csv"
-    )
+    filtered_path = MODEL_RESULTS / "exp05_lgbm_bin_sspace_elementwise_featselect" / "elementwise_features_filtered_cv1_full.csv"
 
-    out_dir = Path(
-        "/home/hannie/cc_ml/models/results/"
-        "exp08_lgbm_regr_sspace_elementwise_reduced_nestedcv"
-    )
+    out_dir = MODEL_RESULTS / "exp08_lgbm_regr_sspace_elementwise_reduced_nestedcv"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print("\n=== EXP08: LGBM regression + reduced elementwise (from exp05) + nested CV ===\n")

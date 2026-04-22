@@ -1,19 +1,29 @@
 #!/usr/bin/env python3
 """
-** Experiment: exp06_lgbm_bin_sspace_elementwise_reduced_nestedcv **
+Experiment: exp06_lgbm_bin_sspace_elementwise_reduced_nestedcv
 
-- task: binary classification
-- feature_design: reduced elementwise similarity (from exp05)
-- use_sspace: true (already baked into features, no recomputation here)
-- nested_cv: true
-- input: elementwise_features_filtered_cv1.csv from exp05
+Config
+- model: LightGBM (LGBMClassifier)
+- task: binary classification (synergy vs antagonism)
+- feature_design: reduced elementwise similarity (subset of cos_elem_* and euc_elem_* selected in exp05)
+- sspace: enabled (selection was performed on CC+S-space elementwise features; features are already baked into input)
+- nested_cv: enabled
+- cv_scheme: cv1
+  - outer split: drug-pair disjoint (GroupShuffleSplit; groups=Drug Pair)
+  - inner CV: 3-fold grouped CV (StratifiedGroupKFold fallback GroupKFold; groups=Drug Pair) for hyperparameter search
+- bliss neutrality cutoff: ±0.1 (labels assumed created upstream; input is synergy/antagonism only)
+
+Feature set provenance
+The reduced feature list is taken from exp05 (feature selection performed on a CV1 train split).
+This script trains and evaluates models using that fixed reduced feature space.
+
+Data integrity note
+All preprocessing (missing values, dtypes, column validation, and label construction from Bliss using the
+±0.1 cutoff) is performed upstream. This script assumes the input CSV is clean and contains only valid,
+numeric reduced features plus metadata.
 """
 
-import os
-import sys
 import itertools
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
@@ -23,7 +33,6 @@ import matplotlib.pyplot as plt
 
 from sklearn.model_selection import (
     GroupShuffleSplit,
-    StratifiedKFold,
     GroupKFold,
     StratifiedGroupKFold,
 )
@@ -38,6 +47,11 @@ from sklearn.metrics import (
     precision_recall_fscore_support
 )
 
+# ==========================
+# Paths
+# ==========================
+from halo.paths import MODEL_RESULTS
+
 
 def main():
     # ==========================
@@ -46,16 +60,9 @@ def main():
     SCHEME = "CV1"  # keep same scheme as exp03 for fair comparison
 
     # path to the reduced elementwise dataset produced by exp05
-    filtered_path = Path(
-        "/home/hannie/cc_ml/models/results/"
-        "exp05_lgbm_bin_sspace_elementwise_featselect/"
-        "elementwise_features_filtered_cv1.csv"
-    )
+    filtered_path = MODEL_RESULTS / "exp05_lgbm_bin_sspace_elementwise_featselect" / "elementwise_features_filtered_cv1.csv"
 
-    out_dir = Path(
-        "/home/hannie/cc_ml/models/results/"
-        "exp06_lgbm_bin_sspace_elementwise_reduced_nestedcv"
-    )
+    out_dir = MODEL_RESULTS / "exp06_lgbm_bin_sspace_elementwise_reduced_nestedcv"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print("\n=== EXP06: LGBM bin + reduced elementwise (from exp05) + nested CV ===\n")

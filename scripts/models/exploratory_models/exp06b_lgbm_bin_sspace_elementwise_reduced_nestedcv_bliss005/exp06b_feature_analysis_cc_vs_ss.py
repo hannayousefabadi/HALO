@@ -1,52 +1,55 @@
 #!/usr/bin/env python3
 """
-exp06b_cc_vs_ss_analysis.py
+Script: exp06b_cc_vs_ss_analysis.py (HALO-S-CV1 feature-group analysis)
 
-Feature-group importance analysis for exp06b (PHO-CV1).
+Post-hoc feature-group importance analysis for exp06b.
 
 Purpose
--------
-- Load LightGBM feature importances from exp06b.
-- Use feature_metadata_cc_s_full.csv to map elementwise features to:f
-    - CC (Chemical Checker–derived features)
-    - SS (Strain-space features)
-- Quantify how much normalized gain comes from CC vs SS.
-- Count how many CC/SS features appear in the top-k ranked features.
+- Load the aggregated LightGBM feature importances produced by exp06b
+  (feature_importances_cv1.csv; importance_gain_mean ± std).
+- Classify each reduced elementwise feature as originating from:
+    - CC : Chemical Checker base dimensions
+    - SS : strain-space (S-space) base dimensions
+  using feature_metadata_cc_s_full.csv to infer the CC dimensionality boundary.
+- Quantify the contribution of CC vs SS to total (normalized) gain.
+- Count how many CC/SS features appear among the top-k ranked features.
 
-Outputs
--------
-All outputs are written next to the feature_importances file, i.e.:
+Inputs
+- MODEL_RESULTS/exp06b_lgbm_bin_sspace_elementwise_reduced_nestedcv_bliss005/
+    - feature_importances_cv1.csv
+- FEATURES/
+    - feature_metadata_cc_s_full.csv
 
-<RESULT_DIR>/
-    feature_importances_cv1.csv
-    cc_vs_ss_importance_summary.csv
-    cc_vs_ss_topk_counts.csv
+Grouping logic
+- Elementwise feature names are expected to follow: {cos|euc}_elem_{idx}.
+- Parse the trailing integer idx.
+- Infer n_cc_dims from metadata as: max(CC dimension) + 1.
+- Assign group:
+    - CC if idx < n_cc_dims
+    - SS if idx >= n_cc_dims
+  (Any non-matching feature name is labeled "Unknown".)
 
-These summaries can be used directly in the Results/Discussion text.
+Outputs (written into the exp06b result directory)
+- cc_vs_ss_importance_summary.csv : per-group counts + total normalized gain + fraction of total gain
+- cc_vs_ss_topk_counts.csv        : CC vs SS counts within top k features (k = 20, 50, 100)
+
+**Data integrity note:**
+All preprocessing (NA handling, dtype enforcement, column validation, etc.) was completed upstream.
+This script assumes clean, validated input data and an existing exp06b importance file.
 """
 
-from pathlib import Path
-import numpy as np
 import pandas as pd
 
+from pathlib import Path
+from halo.paths import FEATURES, MODEL_RESULTS
 
-# ==========================
-# 0) Paths
-# ==========================
-
-RESULT_DIR = Path(
-    "/home/hany/projects/cc_ml/models/results/"
-    "exp06b_lgbm_bin_sspace_elementwise_reduced_nestedcv_bliss005"
-)
+RESULT_DIR = MODEL_RESULTS / "exp06b_lgbm_bin_sspace_elementwise_reduced_nestedcv_bliss005"
 FI_PATH = RESULT_DIR / "feature_importances_cv1.csv"
 
-FEATURE_META_PATH = Path(
-    "/home/hany/projects/cc_ml/pipeline/feature_mapper/feature_metadata_cc_s_full.csv"
-)
+FEATURE_META_PATH = FEATURES / "feature_metadata_cc_s_full.csv"
 
 OUT_SUMMARY_PATH = RESULT_DIR / "cc_vs_ss_importance_summary.csv"
 OUT_TOPK_PATH = RESULT_DIR / "cc_vs_ss_topk_counts.csv"
-
 
 # ==========================
 # 1) Load data

@@ -12,14 +12,10 @@ For each column (dim_i or s_j), we annotate:
 - group_label: e.g. 'Chemistry / A1: 2D fingerprints' or 'Strain-space'
 """
 import pandas as pd
-
-import sys
-from pathlib import Path
-sys.path.append(str(Path().resolve() / "src"))
-from paths import FEATURES, CC_FEATURES, SS_FEATURES
+from halo.paths import FEATURES, CC_FEATURES, SS_FEATURES
 
 
-CC_FEATURES_PATH = CC_FEATURES / "features_25_levels_into_1.csv"
+CC_FEATURES_PATH = CC_FEATURES / "cc_features_concat_25x128.csv"
 S_FEATURES_PATH  = SS_FEATURES / "sspace.csv"
 OUTPUT_PATH      = FEATURES / "feature_metadata_cc_s_full.csv"
 
@@ -72,14 +68,14 @@ CC_SUBLEVEL_NAME = {
 }
 
 CC_DIM_PER_SUBLEVEL = 128
-CC_TOTAL_SUBLEVELS = len(CC_SUBLEVELS_ORDERED)          # 25
+CC_TOTAL_SUBLEVELS = len(CC_SUBLEVELS_ORDERED)               # 25
 CC_TOTAL_CC_DIMS = CC_DIM_PER_SUBLEVEL * CC_TOTAL_SUBLEVELS  # 3200
 
 
 def main():
     # Load CC + S tables (to get columns)
-    cc_df = pd.read_csv(CC_FEATURES_PATH)
-    ss_df = pd.read_csv(S_FEATURES_PATH)
+    cc_df = pd.read_csv(CC_FEATURES_PATH).copy()
+    ss_df = pd.read_csv(S_FEATURES_PATH).copy()
 
     # Normalize Inchikey if needed 
     if "inchikey" in cc_df.columns:

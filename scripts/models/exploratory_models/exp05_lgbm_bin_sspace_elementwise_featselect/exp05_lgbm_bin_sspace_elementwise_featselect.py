@@ -1,17 +1,37 @@
 #!/usr/bin/env python3
 """
-** Experiment: exp05_lgbm_bin_sspace_elementwise_featselect **
+Experiment: exp05_lgbm_bin_sspace_elementwise_featselect
 
-- task: feature selection for binary classification
-- feature_design: elementwise similarity (cos_elem_*, euc_elem_*)
-- use_sspace: true
-- goal: reduce elementwise feature space + build mapping for later interpretation
+Config
+- model: LightGBM (used only to rank features by importance; not a final predictive model)
+- task: feature selection for binary classification (synergy vs antagonism)
+- feature_design: elementwise similarity (cos_elem_* and euc_elem_* from CC+S-space base features)
+- sspace: enabled
+- cv_scheme: cv1_single
+  - single held-out split with drug-pair disjointness (GroupShuffleSplit; groups=Drug Pair)
+  - no inner folds, no nested CV
+- bliss neutrality cutoff: ±0.1 (labels assumed created upstream; this script filters to synergy/antagonism only)
+
+Goal
+Create a reduced elementwise feature set to be reused by later modeling experiments (exp06 family),
+and export a mapping from selected elementwise features back to the originating CC/S-space base feature
+for interpretability.
+
+Feature selection procedure (train split only)
+1) Variance filter: drop zero-variance features.
+2) Correlation prefilter: keep features with |corr(feature, y)| >= corr_min (fallback: keep all if none pass).
+3) Model-based filter: fit a fixed LightGBM classifier on the training split and keep the top fraction of
+   features ranked by feature_importances_.
+
+Outputs
+- elementwise_features_filtered_cv1.csv: metadata + selected elementwise features for all rows
+- selected_features_cv1.txt: newline-separated selected feature names
+- selected_elementwise_feature_mapping.csv: mapping from elementwise feature → base feature metadata
+
+Data integrity note
+All preprocessing (missing values, dtypes, column validation, and label construction from Bliss using the
+±0.1 cutoff) is performed upstream. This script assumes the processed inputs are clean and consistent.
 """
-
-import os
-import sys
-import itertools
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -19,11 +39,9 @@ import lightgbm as lgb
 
 from sklearn.model_selection import GroupShuffleSplit
 from sklearn.preprocessing import LabelEncoder
-from sklearn.metrics import accuracy_score
 
-# ----- make pipeline importable -----
-sys.path.append("/home/hannie/cc_ml/pipeline")
-from feature_mapper.feature_mapper import FeatureMapper  # noqa: E402
+from halo.paths import FEATURES, CC_FEATURES, SS_FEATURES, PROCESSED, MODEL_RESULTS
+from halo.mappers.feature_mapper import FeatureMapper
 
 
 def main():
@@ -35,14 +53,11 @@ def main():
     corr_min = 0.01         # minimal |corr(feature, y)| to keep
     keep_top_frac = 0.30    # keep top 30% of features by importance
 
-    base_dir = Path("/home/hannie/cc_ml/pipeline/preprocessing/data_to_use")
-    cc_path = base_dir / "features_25_levels_into_1.csv"
-    ss_path = base_dir / "sspace.csv"
-    combos_path = base_dir / "combinations_combined.csv"
+    cc_path = CC_FEATURES / "cc_features_concat_25x128.csv"
+    ss_path = SS_FEATURES / "sspace.csv"
+    combos_path = PROCESSED / "halo_training_dataset.csv"
 
-    out_dir = Path(
-        "/home/hannie/cc_ml/models/results/exp05_lgbm_bin_sspace_elementwise_featselect"
-    )
+    out_dir = MODEL_RESULTS / "exp05_lgbm_bin_sspace_elementwise_featselect"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print("\n=== EXP05: elementwise feature selection ===\n")
@@ -188,7 +203,7 @@ def main():
     features_cols = [c for c in features_cc_s.columns if c not in ignore]
 
     # load metadata
-    meta_path = Path("/home/hannie/cc_ml/pipeline/feature_mapper/feature_metadata_cc_s.csv")
+    meta_path = FEATURES / "feature_metadata_cc_s_full.csv"
     feature_meta = pd.read_csv(meta_path).set_index("original_name")
 
     rows = []

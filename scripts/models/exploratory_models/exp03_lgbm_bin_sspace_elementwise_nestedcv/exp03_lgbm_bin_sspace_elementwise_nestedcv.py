@@ -1,28 +1,48 @@
 #!/usr/bin/env python3
 """
-**Experiment: exp03_lgbm_bin_sspace_elementwise_nestedcv**
+Experiment: exp03_lgbm_bin_sspace_elementwise_nestedcv
 
-- task: binary classification
-- feature_design: elementwise similarity
-- use_sspace: true
-- nested_cv: true
+Config
+- model: LightGBM (LGBMClassifier)
+- task: binary classification (synergy vs antagonism)
+- feature_design: elementwise similarity (per-dimension cosine contributions + per-dimension abs-diff similarity)
+- sspace: enabled (strain-space features merged onto CC features per drug via `inchikey`)
+- nested_cv: enabled
+- cv_scheme: CV1 (outer split held out by Drug Pair; optional CV2 supported by `SCHEME`)
+- bliss neutrality cutoff: ±0.1 (labels are assumed to be created upstream using this cutoff)
+
+Nested CV procedure
+- Outer split:
+  - CV1: GroupShuffleSplit with groups = Drug Pair (80% train / 20% test)
+  - CV2 (optional): disjoint holdout by Strain + Drug Pair with cross-edge drops
+- Inner tuning (on outer-train only):
+  - StratifiedGroupKFold (fallback GroupKFold), groups = Drug Pair
+  - random search over 32 sampled hyperparameter configs
+  - selection metric: mean validation accuracy across inner folds
+- Final fit: refit best model on full outer-train, evaluate once on outer-test
+
+Data integrity note
+All preprocessing (missing values, dtypes, column validation, and label construction from Bliss using the
+±0.1 cutoff) is performed upstream in preprocessing notebooks/scripts. This script assumes the processed
+inputs are clean and consistent and that `Interaction Type` already reflects that cutoff.
+
+Class encoding
+Labels are encoded with LabelEncoder on {antagonism, synergy}, yielding antagonism=0 and synergy=1
+(alphabetical). Evaluation treats synergy as the positive class for ROC-AUC by explicitly selecting the
+synergy probability column and binarizing y_test accordingly.
 """
 
-import os
-import sys
-import itertools
-from pathlib import Path
 
+import itertools
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
 import matplotlib
-matplotlib.use("Agg")  # non-interactive backend (safe in tmux / no GUI)
+matplotlib.use("Agg")  # safe in tmux 
 import matplotlib.pyplot as plt
 
 from sklearn.model_selection import (
     GroupShuffleSplit,
-    StratifiedKFold,
     GroupKFold,
     StratifiedGroupKFold,
 )
@@ -37,9 +57,8 @@ from sklearn.metrics import (
     precision_recall_fscore_support
 )
 
-# ----- make pipeline importable -----
-sys.path.append("/home/hannie/cc_ml/pipeline")
-from feature_mapper.feature_mapper import FeatureMapper  # noqa: E402
+from halo.paths import CC_FEATURES, SS_FEATURES, PROCESSED, MODEL_RESULTS
+from halo.mappers.feature_mapper import FeatureMapper
 
 
 def main():
@@ -48,15 +67,11 @@ def main():
     # ==========================
     SCHEME = "CV1"  # or "CV2"
 
-    base_dir = Path("/home/hannie/cc_ml/pipeline/preprocessing/data_to_use")
-    cc_path = base_dir / "features_25_levels_into_1.csv"
-    ss_path = base_dir / "sspace.csv"
-    combos_path = base_dir / "combinations_combined.csv"
+    cc_path = CC_FEATURES / "cc_features_concat_25x128.csv"
+    ss_path = SS_FEATURES / "sspace.csv"
+    combos_path = PROCESSED / "halo_training_dataset.csv"
 
-    out_dir = Path(
-        "/home/hannie/cc_ml/models/results/"
-        "exp03_lgbm_bin_sspace_elementwise_nestedcv"
-    )
+    out_dir = MODEL_RESULTS / "exp03_lgbm_bin_sspace_elementwise_nestedcv"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print("\n=== EXP03: LGBM bin + S-space + elementwise similarity + nested CV ===\n")
@@ -113,8 +128,8 @@ def main():
     y_enc = le.fit_transform(y)
 
     pairs = df["Drug Pair"].astype(str).values
-    strains = df["Strain"].astype(str).values  # noqa: F841
-    n = len(df)                                # noqa: F841
+    strains = df["Strain"].astype(str).values 
+    n = len(df)                                
 
     rng = np.random.default_rng(42)
 
