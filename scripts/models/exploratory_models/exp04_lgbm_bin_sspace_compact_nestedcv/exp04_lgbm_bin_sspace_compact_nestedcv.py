@@ -3,32 +3,33 @@
 Experiment: exp04_lgbm_bin_sspace_compact_nestedcv
 
 Config
-- model: LightGBM (LGBMClassifier)
-- task: binary classification (synergy vs antagonism)
+- model: LightGBM
+- task: binary classification
 - feature_design: compact similarity (per-block cosine similarity + per-block normalized L2 similarity)
-- sspace: enabled (strain-space features merged onto CC features per drug via `inchikey`)
-- nested_cv: enabled
-- cv_scheme: CV1 (outer split held out by Drug Pair; optional CV2 supported by `SCHEME`)
-- bliss neutrality cutoff: ±0.1 (labels are assumed to be created upstream using this cutoff)
+- sspace: enabled (strain-space features)
+- feature_selection: disabled
 
-Nested CV procedure
-- Outer split:
-  - CV1: GroupShuffleSplit with groups = Drug Pair (80% train / 20% test)
-  - CV2 (optional): disjoint holdout by Strain + Drug Pair with cross-edge drops
-- Inner tuning (on outer-train only):
-  - StratifiedGroupKFold (fallback GroupKFold), groups = Drug Pair
-  - random search over 32 sampled hyperparameter configs
-  - selection metric: mean validation accuracy across inner folds
-- Final fit: refit best model on full outer-train, evaluate once on outer-test
+- CV:
+  - nested_cv: enabled
+  - Outer split:
+    - CV1 scheme: drug pair held-out
+  - Inner split:
+    - StratifiedGroupKFold, groups = Drug Pair
+    - random search over 32 sampled hyperparameter configs
+    - selection metric: mean validation accuracy across inner folds
+  - Final fit: refit best model on full outer-train, evaluate once on outer-test
 
 Data integrity note
-All preprocessing (missing values, dtypes, column validation, and label construction from Bliss using the
-±0.1 cutoff) is performed upstream in preprocessing notebooks/scripts. This script assumes the processed
-inputs are clean and consistent and that `Interaction Type` already reflects that cutoff.
+All preprocessing (missing values, dtypes, column validation, etc.) is performed upstream in preprocessing 
+notebooks/scripts. This script assumes the processed inputs are clean and consistent.  
+
+Class encoding
+The binary target is encoded as {0,1} where 1 corresponds to synergy and is treated as the
+positive class for F1 and ROC-AUC.
 
 Implementation note (compact features)
 Compact similarity computes one cosine and one normalized-L2 similarity per fixed-size feature block.
-The block size is assumed to match the structure of the per-drug feature vector (default: 128).
+The block size is assumed to be 128d * 5 layers of Chemical checker.
 """
 
 import itertools
@@ -36,7 +37,7 @@ import numpy as np
 import pandas as pd
 import lightgbm as lgb
 import matplotlib
-matplotlib.use("Agg")  # non-interactive backend (safe on tmux)
+matplotlib.use("Agg") 
 import matplotlib.pyplot as plt
 
 from sklearn.model_selection import (
@@ -72,8 +73,8 @@ def main():
     out_dir = MODEL_RESULTS / "exp04_lgbm_bin_sspace_compact_nestedcv"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    print("\n=== EXP04: LGBM bin + S-space + compact similarity + nested CV ===\n")
-    print("Using scheme:", SCHEME)
+    print("\n=== EXP04 ===\n")
+    # print("Using scheme:", SCHEME)
     print("Output dir:", out_dir)
 
     # ==========================
@@ -92,11 +93,9 @@ def main():
         .merge(ss_df, on="inchikey", how="inner", suffixes=("", "_s"))
     )
 
-    # *** difference vs exp02/03: compact_similarity ***
+    # compact_similarity
     df = FeatureMapper().compact_similarity(combinations_df, features_cc_s)
-    print("Full df shape (before filtering):", df.shape)
-    print(df["Interaction Type"].value_counts())
-    print(df.head())
+    print("Full df shape:", df.shape)
 
     # binary task: synergy vs antagonism
     df = df[df["Interaction Type"].isin(["synergy", "antagonism"])].copy()
@@ -136,18 +135,25 @@ def main():
     # 3) Outer splits (CV1 / CV2)
     # ==========================
     def make_split_cv1(verbose=True):
-        gss = GroupShuffleSplit(n_splits=1, test_size=0.20, random_state=42)
+        """
+        Split data into outer test and outer train under Drug Pair held-out scheme (CV1). 5 fold.
+        
+        Returns:
+            tr_idx (np.ndarray of positions),
+            te_idx (np.ndarray of positions)
+        """
+        gss = GroupShuffleSplit(n_splits=5, test_size=0.20, random_state=42)
         tr_idx, te_idx = next(gss.split(X, y_enc, groups=pairs))
 
-        if verbose:
-            print("=" * 72)
-            print("CV1: Drug Pair grouping:")
-            print(f"Train size: {len(tr_idx)}")
-            print(f"Train size fraction: {round((len(tr_idx) / len(df)), 2) * 100}")
-            print(f"Test size: {len(te_idx)}")
-            print(f"Test size fraction: {round((len(te_idx) / len(df)), 2) * 100}")
-            print(f"Test + Train set: {len(tr_idx) + len(te_idx)}")
-            print("-" * 72)
+        # if verbose:
+        #     print("=" * 72)
+        #     print("CV1: Drug Pair grouping:")
+        #     print(f"Train size: {len(tr_idx)}")
+        #     print(f"Train size fraction: {round((len(tr_idx) / len(df)), 2) * 100}")
+        #     print(f"Test size: {len(te_idx)}")
+        #     print(f"Test size fraction: {round((len(te_idx) / len(df)), 2) * 100}")
+        #     print(f"Test + Train set: {len(tr_idx) + len(te_idx)}")
+        #     print("-" * 72)
         return tr_idx, te_idx
 
     def make_split_cv2(
@@ -160,7 +166,24 @@ def main():
         verbose: bool = True,
     ):
         """
-        Exhaustive strain subset search (CV2: held out by Strain + Drug Pair)
+        Split data into outer test and outer train under Drug Pair + Strain held-out scheme. 
+        It treat each drug pair and each strain as a node, rows are edges and the number of 
+        rows between each drug pair - strain is the weight of that edge.
+        1) it will exhaustively check every possible subset of strains -> `s_test`
+        2) all pairs that appear with those strains -> `p_test`
+            - Keep TEST rows where (strain ∈ S_test) AND (pair ∈ P_test).
+            - Keep TRAIN rows where (strain ∉ S_test) AND (pair ∉ P_test).
+            - Drop the rest (cross-edges rows between these two sides (test and train)).
+        3) for the final test subset, it will choose the subset that:
+            - gives a test fraction between 16 and 28 %
+            - minimal dropped rows,
+            - if tie, the subset with maximal kept test rows
+            - if tie, the subset with maximal score = kept - λ * dropped (best score)
+        
+        Returns:
+            tr_idx (np.ndarray of positions),
+            te_idx (np.ndarray of positions),
+            info   (dict: chosen sets, counts, top candidates)=
         """
         S_all = df[strain_col].astype(str).values
         P_all = df[pair_col].astype(str).values
@@ -179,6 +202,9 @@ def main():
             )
 
         def eval_subset(S_test_set):
+            """
+            Compute kept/train/dropped and P_test for a given S_test (set of strain labels).
+            """
             if not S_test_set:
                 return 0, 0, n_total, set(), -np.inf
 
@@ -358,6 +384,7 @@ def main():
 
     param_samples = [sample_one_params() for _ in range(32)]
 
+# The inner CV split, 3 folds, grouped by drug-pair
     try:
         inner_cv = StratifiedGroupKFold(
             n_splits=3, shuffle=True, random_state=111
@@ -373,6 +400,11 @@ def main():
             return inner_cv.split(X_tr, y_tr, groups=grp_tr)
 
     def cv_acc_for_params(params):
+        """
+        For each hyperparameter set, this function loop over each of inner folds (3 folds),
+        train on inner-train, validate on inner-val, compute accuracy, average accuracy
+        across 3 folds as the score for that hyperparameter set.
+        """
         accs = []
         for tr_f, val_f in inner_splitter():
             Xf_tr, Xf_val = X_tr.iloc[tr_f], X_tr.iloc[val_f]
@@ -430,7 +462,7 @@ def main():
     # make sure "synergy" is the positive class for AUC
     y_te_bin = (y_te == synergy_code).astype(int)
 
-    # ---- Global metrics (compute once) ----
+    # global metrics
     accuracy_test = accuracy_score(y_te, y_pred)
     f1_macro_test = f1_score(y_te, y_pred, average="macro")
     f1_weighted_test = f1_score(y_te, y_pred, average="weighted")
@@ -446,7 +478,7 @@ def main():
         classification_report(y_te, y_pred, target_names=le.classes_),
     )
 
-    # ---- Per-class metrics (antagonism, synergy) ----
+    # per-class metrics
     ant_code = le.transform(["antagonism"])[0]
     syn_code = synergy_code
 
@@ -460,13 +492,7 @@ def main():
     recall_antag, recall_syn = rec
     f1_antag, f1_syn = f1s
 
-    # ---- Log-friendly lines (for grep / parsing) ----
-    print("\n--- Metrics for Log ---")
-    print(f"accuracy_test={accuracy_test:.4f}")
-    print(f"f1_macro_test={f1_macro_test:.4f}")
-    print(f"f1_weighted_test={f1_weighted_test:.4f}")
-    print(f"roc_auc_test={roc_auc_test:.4f}")
-
+    # log-friendly lines 
     print(f"precision_antag={precision_antag:.4f}")
     print(f"recall_antag={recall_antag:.4f}")
     print(f"f1_antag={f1_antag:.4f}")

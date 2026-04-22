@@ -1,67 +1,136 @@
 #!/usr/bin/env python3
 """
-Experiment: exp09_lgbm_bin_sspace_elementwise_reduced_simplecv (HALO-Base / standard CV)
+Experiment: exp09_lgbm_bin_sspace_elementwise_reduced_simplecv
 
 Config
-- task: binary classification (synergy vs antagonism)
-- feature_design: reduced elementwise similarity features (selected in exp05; includes CC + S-space dimensions)
-- use_sspace: true (S-space is already included in the reduced feature table; no feature recomputation here)
-- cv_scheme: standard stratified split + standard stratified CV (no grouping by drug pair)
-- nested_cv: false (intentionally non-nested; model selection and evaluation are not strictly separated)
-- purpose: provide an optimistic baseline / “upper-bound” estimate under lenient validation assumptions
+- model: LightGBM 
+- task: binary classification
+- feature_design: elementwise similarity 
+- sspace: enabled (strain-space features)
+- feature_selection: enabled (training set only)
 
-Training / selection
-- outer split: single stratified train/test split (80/20)
-- hyperparameter tuning: RandomizedSearchCV with 5-fold StratifiedKFold on the training split
-- model: LightGBM classifier (objective="binary"); metrics reported via shared_utils (F1-focused search)
+- CV:
+  - nested_cv: disabled
+  - stratified train/test split (80/20)
 
-Outputs
-- console: best hyperparameters, test-set classification metrics, and an overfitting report
-- no fold-aggregated artifacts are produced (this script is a baseline comparator)
-
-**Data integrity note:**
-All preprocessing (NA handling, dtype enforcement, column validation, etc.)
-was completed in the preprocessing scripts.
-This notebook assumes clean, validated input data.
+  
+Data integrity note
+All preprocessing (missing values, dtypes, column validation, etc.) is performed upstream in preprocessing 
+notebooks/scripts. This script assumes the processed inputs are clean and consistent.
 """
 
 
+import numpy as np
 import pandas as pd
+import lightgbm as lgb
+
 from sklearn.model_selection import (
     StratifiedKFold,
     train_test_split,
-    RandomizedSearchCV
+    RandomizedSearchCV,
 )
 from sklearn.preprocessing import LabelEncoder
-import lightgbm as lgb
 
-# ==========================
-# Paths
-# ==========================
-from halo.paths import MODEL_RESULTS
+from halo.paths import CC_FEATURES, SS_FEATURES, PROCESSED
+from halo.mappers.feature_mapper import FeatureMapper
+from halo.shared_utils.data_io import classify_interaction
 from halo.shared_utils.metrics import classification_metrics, overfitting_report
 
 
+def select_features_lgbm(
+    X_train: pd.DataFrame,
+    y_train: np.ndarray,
+    feat_cols: list[str],
+    corr_min: float = 0.01,
+    keep_top_frac: float = 0.30,
+) -> list[str]:
+    """
+    Feature selection performed once on the outer training split only.
+
+    Steps
+    1) drop zero-variance features
+    2) keep features with |corr(feature, y)| >= corr_min
+       fallback: keep all variance-filtered features if none pass
+    3) rank by LightGBM feature_importances_ and keep top fraction
+    """
+    var_series = X_train.var()
+    kept_after_var = [c for c in feat_cols if var_series[c] > 0.0]
+
+    if len(kept_after_var) == 0:
+        raise ValueError("No features remained after variance filtering.")
+
+    kept_after_corr = []
+    y_train_s = pd.Series(y_train, index=X_train.index)
+
+    for col in kept_after_var:
+        corr = X_train[col].corr(y_train_s)
+        if corr is not None and np.isfinite(corr) and abs(corr) >= corr_min:
+            kept_after_corr.append(col)
+
+    if not kept_after_corr:
+        kept_after_corr = kept_after_var.copy()
+
+    fs_model = lgb.LGBMClassifier(
+        objective="binary",
+        n_estimators=2000,
+        random_state=777,
+        n_jobs=1,
+        learning_rate=0.03,
+        max_depth=3,
+        num_leaves=15,
+        min_data_in_leaf=200,
+        feature_fraction=0.4,
+        bagging_fraction=0.8,
+        bagging_freq=1,
+        lambda_l2=50.0,
+        lambda_l1=0.0,
+        max_bin=127,
+        min_gain_to_split=0.05,
+    )
+
+    fs_model.fit(X_train[kept_after_corr], y_train)
+
+    feat_imp = pd.Series(
+        fs_model.feature_importances_,
+        index=kept_after_corr,
+    ).sort_values(ascending=False)
+
+    n_keep = max(1, int(len(feat_imp) * keep_top_frac))
+    selected_features = feat_imp.index[:n_keep].tolist()
+    return selected_features
+
+
 def main():
-    print("\n=== EXP09: Simple CV + Reduced Elementwise Features (Binary) ===\n")
+    print(
+        "\n=== EXP09 ===\n"
+    )
+
+    corr_min = 0.01
+    keep_top_frac = 0.30
 
     # ==========================
-    # 1) Load reduced feature file from exp05
+    # 1) Load raw inputs and rebuild full CC-only elementwise feature table
     # ==========================
-    reduced_path = MODEL_RESULTS / "exp05_lgbm_bin_sspace_elementwise_featselect" / "elementwise_features_filtered_cv1.csv"
+    cc_path = CC_FEATURES / "cc_features_concat_25x128.csv"
+    ss_path = SS_FEATURES / "sspace.csv"
+    combos_path = PROCESSED / "halo_training_dataset.csv"
 
-    if not reduced_path.exists():
-        raise FileNotFoundError(f"Reduced feature file not found: {reduced_path}")
+    cc_df = pd.read_csv(cc_path).copy()
+    ss_df = pd.read_csv(ss_path).copy()
+    combinations_df = pd.read_csv(combos_path).copy()
 
-    df = pd.read_csv(reduced_path).copy()
-    print("Loaded df:", df.shape)
-    print(df["Interaction Type"].value_counts())
+    features_cc_s = cc_df.merge(ss_df, on="inchikey", how="inner", suffixes=("", "_s"))
+    df = FeatureMapper().elementwise_similarity(combinations_df, features_cc_s)
+
+    print("Full df shape:", df.shape)
 
     # ==========================
     # 2) Keep binary classes only
     # ==========================
     df = df[df["Interaction Type"].isin(["synergy", "antagonism"])].copy()
+
     print("\nFiltered (binary classes):", df.shape)
+    print(df["Interaction Type"].value_counts())
 
     # ==========================
     # 3) Feature columns
@@ -81,25 +150,45 @@ def main():
     X = df[feat_cols].copy()
     y = df["Interaction Type"].copy()
 
-    # Encode target
     le = LabelEncoder()
     y_enc = le.fit_transform(y)
     print("Classes:", list(le.classes_))
 
     # ==========================
-    # 4) Simple CV train/test split (LEAKY ON PURPOSE)
+    # 4) Simple CV train/test split (LEAKY BY PAIR ON PURPOSE)
     # ==========================
     X_train, X_test, y_train, y_test = train_test_split(
         X, y_enc, test_size=0.20, random_state=42, stratify=y_enc
     )
 
+    print("\nTrain shape before feature selection:", X_train.shape)
+    print("Test shape before feature selection :", X_test.shape)
+
     # ==========================
-    # 5) LightGBM baseline + randomized search
+    # 5) Feature selection on TRAIN ONLY
+    # ==========================
+    selected_features = select_features_lgbm(
+        X_train=X_train,
+        y_train=y_train,
+        feat_cols=feat_cols,
+        corr_min=corr_min,
+        keep_top_frac=keep_top_frac,
+    )
+
+    X_train_sel = X_train[selected_features].copy()
+    X_test_sel = X_test[selected_features].copy()
+
+    print("Selected feature count:", len(selected_features))
+    print("Train shape after feature selection:", X_train_sel.shape)
+    print("Test shape after feature selection :", X_test_sel.shape)
+
+    # ==========================
+    # 6) LightGBM baseline + randomized search
     # ==========================
     base_clf = lgb.LGBMClassifier(
         objective="binary",
         metric="binary_logloss",
-        n_jobs=-1,
+        n_jobs=1,
         random_state=42,
     )
 
@@ -129,20 +218,20 @@ def main():
         cv=cv,
         scoring="f1",
         verbose=1,
-        n_jobs=-1,
+        n_jobs=1,
         random_state=42,
     )
 
-    search.fit(X_train, y_train)
+    search.fit(X_train_sel, y_train)
     best_model = search.best_estimator_
 
     print("\nBest parameters:", search.best_params_)
 
     # ==========================
-    # 6) Final evaluation
+    # 7) Final evaluation
     # ==========================
-    y_pred = best_model.predict(X_test)
-    y_score = best_model.predict_proba(X_test)  # full (n_samples, 2) matrix
+    y_pred = best_model.predict(X_test_sel)
+    y_score = best_model.predict_proba(X_test_sel)
 
     print("\n=== TEST METRICS (LEAKY SIMPLE CV) ===")
     classification_metrics(
@@ -153,13 +242,13 @@ def main():
     )
 
     # ==========================
-    # 7) Overfitting report
+    # 8) Overfitting report
     # ==========================
     print("\n=== Overfitting Report ===")
     overfitting_report(
         best_model,
-        X_train, y_train,
-        X_test, y_test,
+        X_train_sel, y_train,
+        X_test_sel, y_test,
         task="classification",
         average="macro"
     )
@@ -169,3 +258,16 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+
+
+
+
+
+
+
+
+
+

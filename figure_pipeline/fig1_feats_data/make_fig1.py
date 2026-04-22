@@ -33,7 +33,7 @@ BLISS_COL = "Bliss Score"
 CLASS_COL = "Interaction_3class"
 
 DPI = 600
-ADDITIVITY_CUTOFF = 0.05  
+ADDITIVITY_CUTOFF = 0.1  
 
 
 STRAIN_RENAME = {
@@ -92,6 +92,16 @@ def main():
     strain_pair_counts = (
         df_pairs.groupby(STRAIN_COL)["pair"].nunique().sort_values(ascending=False)
     )
+
+    # --- pair-strain overlap ---
+    pair_strain_overlap = (
+        df_pairs.groupby("pair")[STRAIN_COL]
+        .nunique()
+        .sort_values(ascending=False)
+    )
+
+    dist = pair_strain_overlap.value_counts().sort_index()
+    percent_overlap = dist / dist.sum() * 100
 
     pretty_index = (
         strain_pair_counts.index.to_series().replace(STRAIN_RENAME).tolist()
@@ -277,10 +287,17 @@ def main():
     with open(pairs_log_path, "w") as f:
         f.write("Unique drug pairs per strain\n")
         f.write("----------------------------\n")
-        f.write(f"CSV_PATH: {CSV_PATH}\n\n")
         f.write("strain_pretty\tunique_pairs\n")
         for strain_pretty, count in zip(pretty_index, strain_pair_counts.values):
             f.write(f"{strain_pretty}\t{int(count)}\n")
+        f.write("\n")
+        f.write("Pair-strain overlap\n")
+        f.write("----------------------------\n")
+        f.write("count_of_strains_with_this_pair\tcount_of_distinct_drug_pairs\tpercentage_of_all_pairs\n")
+        for n_strains, count in dist.items():
+            pct = percent_overlap.loc[n_strains]
+            f.write(f"{n_strains}\t{count}\t{pct:.2f}%\n")
+        
     print(f"Logged: {pairs_log_path}")
 
     plt.close(fig_strain)

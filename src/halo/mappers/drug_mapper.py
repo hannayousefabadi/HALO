@@ -58,7 +58,7 @@ class DrugMapper:
         """
         Getting compounds with missing inchikeys, AKA the number of compounds
         not included in the initial `list_antimicrobial` or `list_antiviral`
-        
+
         """
         # Returning the number of missing inchikeys in the whole dataset (AKA rows with either
         # Drug A inchikey or Drug B inchikey is missing)
@@ -90,7 +90,7 @@ class DrugMapper:
             critical_columns: list of column names to check NA
 
         Return:
-            Cleaned df: dataset without NA,
+            cleaned_df: dataset without NA,
             na_report: A series with missing values counts for each column    
         
         """

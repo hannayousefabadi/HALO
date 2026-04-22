@@ -17,6 +17,7 @@ __pycache__/
 *.pyc
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 # latex build junk (global)
 *.aux
 *.fdb_latexmk
@@ -52,6 +53,22 @@ results/**
 
 
 # python packaging artifacts
+=======
+# LaTeX build artifacts
+figure_pipeline/table1_novel_pairs/*.aux
+figure_pipeline/table1_novel_pairs/*.log
+figure_pipeline/table1_novel_pairs/*.fls
+figure_pipeline/table1_novel_pairs/*.fdb_latexmk
+figure_pipeline/table1_novel_pairs/*.synctex.gz
+
+
+# RESULTS (contains mostly large files)s
+results/**
+!results/models/.gitkeep
+*.log
+
+
+# HALO package .egg-info
 *.egg-info/
 dist/
 build/
