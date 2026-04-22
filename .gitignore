@@ -16,8 +16,6 @@ __pycache__/
 __pycache__/
 *.pyc
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 # latex build junk (global)
 *.aux
 *.fdb_latexmk
@@ -28,48 +26,32 @@ __pycache__/
 # RESULTS (contains mostly large files)
 results/**
 !results/**/
-# Keeping figure-needed artifacts
-!results/models/exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv_bliss005/metrics_train_cv1.csv
-!results/models/exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv_bliss005/metrics_test_cv1.csv
-!results/models/exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv_bliss005/metrics_per_fold_cv1.csv
-!results/models/exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv_bliss005/train_predictions_cv1.csv
-!results/models/exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv_bliss005/test_predictions_cv1.csv
-!results/models/exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv_bliss005/feature_importances_cv1.csv
-!results/models/exp06b_lgbm_bin_sspace_elementwise_reduced_nestedcv_bliss005/cc_vs_ss_importance_summary.csv
-!results/models/e_validation/external_eval_chandrasekaran/external_roc_curve_chandrasekaran.csv
-!results/models/e_validation/external_eval_chandrasekaran/external_pr_curve_chandrasekaran.csv
-!results/models/e_validation/external_eval_chandrasekaran/external_confusion_matrix_chandrasekaran.csv
-!results/models/e_validation/external_eval_chandrasekaran/external_predictions_chandrasekaran.csv
-# Keeping experiment-needed artifacts
-!results/models/exp05_lgbm_bin_sspace_elementwise_featselect/elementwise_features_filtered_cv1.csv
-!results/models/exp05_lgbm_bin_sspace_elementwise_featselect/elementwise_features_filtered_cv1_full.csv
-!results/models/exp05b_lgbm_bin_sspace_elementwise_featselect_bliss005/elementwise_features_filtered_cv1.csv
-!results/models/exp05c_lgbm_bin_sspace_elementwise_featselect_bliss005_cv2/elementwise_features_filtered_cv2.csv
-!results/models/exp05d_lgbm_bin_nosspace_elementwise_featselect_bliss005/elementwise_features_filtered_cv1_cc_only.csv
-!results/models/exp06b_lgbm_bin_sspace_elementwise_reduced_nestedcv_bliss005/feature_importances_cv1.csv
-!results/models/exp05d_lgbm_bin_nosspace_elementwise_featselect_bliss005/elementwise_features_filtered_all_possible_pairs_cv1_cc_only.csv
-!results/models/exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv_bliss005/best_params_cv1.json
-
-
-
-# python packaging artifacts
-=======
-# LaTeX build artifacts
-figure_pipeline/table1_novel_pairs/*.aux
-figure_pipeline/table1_novel_pairs/*.log
-figure_pipeline/table1_novel_pairs/*.fls
-figure_pipeline/table1_novel_pairs/*.fdb_latexmk
-figure_pipeline/table1_novel_pairs/*.synctex.gz
-
-
-# RESULTS (contains mostly large files)s
-results/**
-!results/models/.gitkeep
 *.log
 
+# Keeping figure-needed artifacts
+!results/models/exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv/metrics_train_cv1.csv
+!results/models/exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv/metrics_test_cv1.csv
+!results/models/exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv/metrics_per_fold_cv1.csv
+!results/models/exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv/train_predictions_cv1.csv
+!results/models/exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv/test_predictions_cv1.csv
+!results/models/exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv/feature_importances_cv1.csv
+!results/models/exp06b_lgbm_bin_sspace_elementwise_reduced_nestedcv/cc_vs_ss_importance_summary.csv
+!results/models/external_validation/external_validation_chandrasekaran/external_roc_curve_chandrasekaran.csv
+!results/models/external_validation/external_validation_chandrasekaran/external_pr_curve_chandrasekaran.csv
+!results/models/external_validation/external_validation_chandrasekaran/external_confusion_matrix_chandrasekaran.csv
+!results/models/external_validation/external_validation_chandrasekaran/external_predictions_chandrasekaran.csv
+# Keeping experiment-needed artifacts
+!results/models/exp05e_lgbm_bin_nosspace_elementwise_featselect/elementwise_features_filtered_cv1.csv
+!results/models/exp05e_lgbm_bin_nosspace_elementwise_featselect/elementwise_features_filtered_cv1_full.csv
+!results/models/exp05e_lgbm_bin_nosspace_elementwise_featselect/elementwise_features_filtered_cv2.csv
+!results/models/exp05e_lgbm_bin_nosspace_elementwise_featselect/elementwise_features_filtered_cv1_cc_only.csv
+!results/models/exp06b_lgbm_bin_sspace_elementwise_reduced_nestedcv/feature_importances_cv1.csv
+!results/models/exp06d_lgbm_bin_nosspace_elementwise_reduced_nestedcv/best_params_cv1.json
 
 # HALO package .egg-info
 *.egg-info/
 dist/
 build/
 
+# Keep gitkeep file
+!results/models/.gitkeep
