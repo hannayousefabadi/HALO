@@ -22,23 +22,12 @@ figure_pipeline/table1_novel_pairs/*.log
 figure_pipeline/table1_novel_pairs/*.fls
 figure_pipeline/table1_novel_pairs/*.fdb_latexmk
 figure_pipeline/table1_novel_pairs/*.synctex.gz
-paper/**/*.aux
-paper/**/*.log
-paper/**/*.fls
-paper/**/*.fdb_latexmk
-paper/**/*.synctex.gz
-paper/**/*.out
-paper/**/*.toc
-paper/**/*.lof
-paper/**/*.lot
-paper/**/*.blg
-paper/**/.history/
 
 
 # RESULTS (contains mostly large files)s
 results/**
 !results/models/.gitkeep
-
+*.log
 
 
 # HALO package .egg-info
