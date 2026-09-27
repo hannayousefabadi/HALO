@@ -16,12 +16,12 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from halo.paths import MODEL_RESULTS, FIGURES
+from halo.paths import RESULTS, FIGURES
 
 OUT_DIR = FIGURES / "supplementary" 
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-summary_path = MODEL_RESULTS / "external_validation" / "novel_pairs" / "cc_similarity_summary.csv"
+summary_path = RESULTS / "novel_pairs" / "cc_similarity_summary.csv"
 df = pd.read_csv(summary_path)
 df["Group"] = df["Set"].astype(str) + "-" + df["Interaction Type"].astype(str)
 
@@ -83,7 +83,7 @@ for legend_name, subdf in ant_df.groupby("LegendGroup"):
         label=legend_name
     )
 
-axB.set_title(r"$\mathbf{C.}$  Antagonism Similarity Spread")
+axB.set_title(r"$\mathbf{B.}$  Antagonism Similarity Spread")
 axB.set_xlabel("Cosine Similarity SD")
 axB.set_ylabel("Euclidean Similarity SD")
 axB.legend(frameon=False, fontsize=12, title="")
